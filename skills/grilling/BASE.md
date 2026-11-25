@@ -44,4 +44,10 @@ The read-only helper finds the checkout, documents, code and configured Obsidian
 
 Check claims against code. Identify actors, domain terms, state changes, outcomes, invariants, overloaded names and contradictions before asking. Use concrete scenarios to test feasibility, failure cases, surprising dependencies, existing ADRs, vague acceptance criteria and the first useful delivery slice. For UI plans, establish audience, design direction, important states and viewports, and rendered proof. Divide a plan only when one session is impractical.
 
-Return the tightened plan, gaps and next questions with the inspected paths and the claims or contradictions they support. Use [ADR guidance](references/adr-format.md) to decide whether to offer an ADR and to write one after acceptance.
+Return the tightened plan, gaps and next questions with the inspected paths and the claims or contradictions they support.
+
+## Record the confirmed plan
+
+After the user confirms the plan, honor their chosen destination, including configured Obsidian project notes. When no destination is chosen, write the confirmed design to the repository's `docs/DESIGN.md`. When the user moves on to implementation in the repository, default to `docs/TASKS.md` for tasks and acceptance checks. Update the relevant sections of existing files and preserve unrelated decisions. For a plan with neither a repository nor a notes destination, return the confirmed plan in chat.
+
+Use [ADR guidance](references/adr-format.md) to decide whether to offer an ADR and to write one after acceptance.

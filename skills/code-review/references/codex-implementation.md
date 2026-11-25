@@ -1,33 +1,36 @@
 # Hand off implementation
 
-`AGENTS.md` (`Model turns`) owns effort caps, the fast-mode ban and T3 Code provider/option routing. Claude and Gemini coordinators delegate every implementation edit, including tests, documentation and review fixes, to the first implementer that can start, in this order:
+Antigravity and Gemini coordinators use `dispatch-codex` for implementation edits, including simplification, tests, documentation and authorized review fixes. Claude coordinators follow the implementer order and launcher in `AGENTS.md`. Its model caps and fast-mode rules apply to all launches.
 
-1. GPT-6.2 Sol at `xhigh`
-2. Gemini 4 Neon at `high`
-3. Claude Opus 5.5 at `high`
-4. GPT-6.2 Astra at `xhigh`
-5. Claude Sonnet 5.5 at `high`
-6. Claude Fable 5.2 at `high`
+Verify ChatGPT sign-in before dispatch. Give the worker the goal, owned files, constraints, expected behavior and acceptance checks. Choose a stable task ID and pass the assigned worktree explicitly. Use `--branch <name>` if the dispatcher is creating a worktree on a new branch.
 
-If the launcher, model, account, subscription or spend cap rules one out, move to the next without asking. In the final reply, name the model that did the work and why earlier ones were skipped. If none can start, leave the edit pending and report why.
+```sh
+env -u CODEX_API_KEY -u OPENAI_API_KEY codex login status
 
-Give the implementer the goal, owned files, constraints and acceptance checks. Let it choose the implementation. Inspect the returned diff and independently verify the result. Route further edits through the same implementer while it stays available. Leave any edit the host will not let you delegate pending and report why.
+dispatch-codex run --role impl --effort high --task "$task_id" \
+  --worktree "$worktree_dir" --prompt-file "$brief_path"
+```
 
-## Codex models: Sol and Astra
+`impl` runs GPT-6.2 Sol at `high` by default and accepts `--effort xhigh`. After two failed Sol attempts, pass the unresolved failure and evidence to `dispatch-codex run --role escalate` for GPT-6.2 Astra, using the same `--task` and `--worktree`. Use `dispatch-codex status --task "$task_id"` to inspect the attempt state. Stop at three implementation attempts total. Report the unresolved result when the circuit breaker trips. Reset only with the user's approval for a new retry cycle.
 
-In T3 Code, use a Codex connection verified as signed in with ChatGPT in the provider settings. Use `orchestrator_capabilities` for the instance ID, model and effort. A display name alone does not verify sign-in. Call `delegate_task` with `role: "implementation"`, `target.providerInstanceId` set to the verified connection, `target.model: "gpt-6.2-sol"` (or `"gpt-6.2-astra"`) and `target.options: [{id: "reasoningEffort", value: "xhigh"}]`. Follow the launcher's continuation.
+After every run, including failures, use both commands to inspect the actual execution worktree.
 
-Outside T3 Code, use the installed Codex CLI in the assigned worktree. Run `env -u CODEX_API_KEY -u OPENAI_API_KEY codex login status` first and confirm it reports ChatGPT sign-in. Clear both variables for the launch to keep an inherited API key from overriding the saved login. Pass the implementation brief on standard input. For Astra, use `-m gpt-6.2-astra`.
+```sh
+git -C "$worktree_dir" status --short --untracked-files=all
+git -C "$worktree_dir" diff HEAD --stat
+```
+
+Read the full diff and any untracked files, check scope, and independently run the acceptance checks before taking the changes. Report the actual implementer and any escalation or blocker.
+
+## Direct Codex fallback
+
+If the dispatcher is unavailable, use direct `codex exec` only within the same scope and attempt budget. Verify ChatGPT sign-in as above, clear both API-key variables, set the assigned worktree with `-C`, and omit `-a`. Use the model and effort for the current attempt.
 
 ```sh
 env -u CODEX_API_KEY -u OPENAI_API_KEY codex exec \
-  -m gpt-6.2-sol -c 'model_reasoning_effort="xhigh"' \
+  -m gpt-6.2-sol -c 'model_reasoning_effort="high"' \
   -c 'model_provider="openai"' -c 'forced_login_method="chatgpt"' \
-  -s workspace-write - < task-brief.md
+  -s workspace-write -C "$worktree_dir" - < "$brief_path"
 ```
 
-If no Codex connection is verified as signed in with ChatGPT, skip Sol and Astra without asking. Ask Jesse before using an API-key connection instead.
-
-## Other models
-
-In T3 Code, follow `AGENTS.md` (`Model turns`) with `orchestrator_capabilities` and `delegate_task` (`role: "implementation"`) for provider selection (including Antigravity and Cursor fallbacks), effort option names and keeping fast mode off. In Claude Code, use the `Agent` tool with per-invocation `model` (such as `opus` or `sonnet`) and effort when supported by the launcher; if the launcher can't select the model and effort, treat that model as unavailable. Elsewhere, use the harness's own launcher and skip any model whose model and effort it can't select.
+If ChatGPT sign-in cannot be verified, leave the Codex handoff pending and report why. Ask the user before using an API-key connection.

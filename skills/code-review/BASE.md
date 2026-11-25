@@ -6,13 +6,13 @@ metadata:
   source-path: skills/engineering/code-review
   source-revision: abeeaf95660ba9e8b7c753eb38f441ca707a8823
   sources: |
-    - Council approach inspired by Theo’s [tstack council](https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/council/SKILL.md). Adapted with Jesse's reviewer lineup and round, evidence and authority rules.
+    - Independent review informed by Theo’s [tstack council](https://github.com/t3dotgg/tstack/blob/1085050f3baed1ac724caa4a8166145fb2ac88af/skills/council/SKILL.md).
     - UI polish mode informed by Theo’s [Agents Sucked At UI (Until Today)](https://www.youtube.com/watch?v=xq0eB8vxeqk), reviewed 2026-11-13.
 ---
 
 # Code review
 
-Simplify the change, then have one independent reviewer or a five-model council assess it and any affected UI. Never start a second council through another skill.
+Simplify the change, then use the review ladder to assess it and any affected UI.
 
 ## 1. Establish the change
 
@@ -33,28 +33,28 @@ The simplifier returns its patch, a concrete before/after explanation, checks an
 
 ## 3. Choose a review mode
 
-**Decide the review mode yourself. Never ask the user whether to run one reviewer or five.** Honor the mode the user explicitly requested. Otherwise, apply the rules below and proceed. State which mode ran in the report.
+Honor the user's explicit review scope. Otherwise, choose the applicable tier and proceed.
 
-- **Single reviewer (default).** Use one fresh findings-only **GPT-6.2 Sol** reviewer at **high** for ordinary features, bug fixes, tests, docs, clean rebases and small follow-ups. If Sol is unavailable at high in fresh context, use **Claude Opus 5.5** at **high**.
-- **Five-model council.** Launch all five fresh findings-only reviewers at **high** when the user asks for a council or any trigger below applies. The lineup is **GPT-6.2 Sol, GPT-6.2 Astra, Claude Opus 5.5, Claude Fable 5.2 and Gemini 4 Neon**.
-  - **High-risk boundary.** The change touches authentication, permissions, security or privacy, billing or payments, database migrations, persisted-data formats, or release or CI deployment pipelines.
-  - **Broad structural change.** The change refactors multiple packages or subsystems, or changes a public API or contract.
-  - **Substantial UI or UI polish.** The change adds or reworks a user-facing screen, or the user asks to polish or score the UI.
-  - **Post-round escalation.** A single-reviewer round raises a severe, disputed or hard-to-diagnose blocker and a council can help verify the fix or settle the finding. Run that council before asking the user to resolve an inconclusive finding under Step 4.
+- **L1 — Single reviewer (default).** Launch one fresh findings-only **GPT-6.2 Sol** reviewer at **high** via `dispatch-codex run --role review` for ordinary features, bug fixes, tests, docs, clean rebases and small follow-ups. Keep Opus off for L1, including when Sol is unavailable.
+- **L2 — Two-model blind review.** Launch fresh findings-only **GPT-6.2 Astra** at **high** via `dispatch-codex run --role review --deep`, with a separate **Claude Opus 5.5** seat at **high** when available. Use L2 for an explicit deep review or when any of these triggers applies:
+  - Authentication, permissions, security, privacy, billing, payments, migrations, persisted formats, release or CI pipelines.
+  - Broad structural changes across packages or subsystems, or a change to a public API or contract.
+  - A severe, disputed or hard-to-diagnose blocker after L1. Escalate before asking the user to settle an inconclusive finding.
+- **L3 — UI and visual polish.** Use for substantial UI changes or a request to polish or score the UI. Use L1 or L2 for code review when it also applies. Have **Claude Opus 5.5** at **high** review and score the captures against fixed `design` criteria. For polish requests, use the [UI polish scoring and single-reviewer rules](references/ui-polish.md) throughout, with one Opus scorecard per round including the final round. Route authorized fixes via `dispatch-codex run --role impl` and recapture the affected UI.
 
-For a new review of a small follow-up or clean rebase after a finished council, apply the triggers to what changed since the council. Verify the rebased diff with whitespace preserved, for example with `git range-diff` or by inspecting conflict hunks. Use `git patch-id --stable` only to match corresponding commits. Review the new revision.
+For a standalone follow-up or clean rebase after a finished review, apply the triggers to what changed since that review. Verify the rebased diff with whitespace preserved, for example with `git range-diff` or by inspecting conflict hunks. Use `git patch-id --stable` only to match corresponding commits. Review the new revision.
 
-For affected UI, set fixed criteria and gather proof before launch using the [affected UI rules](references/affected-ui.md). When the user asks for polish or names a score, follow [UI polish](references/ui-polish.md).
+For any affected UI, use `frontend-ui-validation` to capture the screens and exercise interactions before review. Set fixed criteria and gather proof using the [affected UI rules](references/affected-ui.md).
 
 ### Launch independent reviewers
 
-Follow [reviewer dispatch](references/reviewer-dispatch.md) to launch fresh reviewers. Use [wait-efficiently](../wait-efficiently/SKILL.md) for pending results.
+Follow [reviewer dispatch](references/reviewer-dispatch.md) to freeze the L2 target, keep the seats' findings private until both submit, and bound the Opus wait to 180 seconds. If the Opus seat is absent, close it and continue L2 with Astra. Use [wait-efficiently](../wait-efficiently/SKILL.md) for pending results.
 
-Count only fresh assessments from the selected models at high on that revision. Disclose context contamination and record missing models with reasons. Continue with any qualifying assessments, even one from a council. If none qualify, report the review incomplete and stop.
+Count only fresh assessments from the selected models at high on that revision. Disclose context contamination and record missing models with reasons. L1 requires Sol, L2 requires Astra, and L3 requires a verified Opus visual assessment. Report any tier missing its required assessment as incomplete.
 
 ### Apply both lenses
 
-Each reviewer uses both lenses unless the request narrows the lens, and reports every supported finding, including minor ones.
+Each L1 and L2 reviewer uses both lenses unless the request narrows the lens, and reports every supported finding, including minor ones.
 
 - **Standards:** [coding-standards](../coding-standards/SKILL.md), step 2's readability rules, diff waste, unnecessary complexity, and [writing-good-tests](../writing-good-tests/SKILL.md) for test additions, keepers and deletions. Cite relevant standard IDs and exceptions. A maintenance finding shows the confusing code, its present reading or change cost, and a simpler behavior-preserving alternative.
 - **Requirements and correctness:** trace real entry points through failure and recovery to the consumer-visible result. Look for missing, incorrect or unrequested behavior. Ask what consequential defect could pass existing tests and what runtime or persisted-state evidence would expose it. Exercise every reader, including tools and UIs, with pre-change state when data formats change. Apply typescript-discipline and relevant domain lenses.
@@ -81,21 +81,21 @@ Settle unclear triggers from callers, deployment and targeted probes, not the wo
 
 Route authorized fixes and selected UI improvements through Step 2's implementation policy. Verify repaired and preserved behavior and recapture changed UI. A contained fix stays within its finding, preserves other behavior, contracts, persisted data, security and permissions, and passes relevant checks.
 
-- **Run another round** after a blocking fix, a selected UI improvement or an uncontained fix. Keep the round’s review mode unless repairs newly cross a Step 3 council trigger or Step 3’s post-round escalation upgrades a single-reviewer review to a five-model council (while honoring an explicit user mode request). Follow the UI polish gating rules when they apply. Fresh reviewers assess the full resulting change under the same criteria.
+- **Run another round** after a blocking fix, a selected UI improvement or an uncontained fix. Keep the tier unless repairs introduce a Step 3 trigger or a post-round blocker escalates L1 to L2. Honor explicit review scope and the L3 polish round limit. Fresh reviewers assess the full resulting change under the same criteria.
 - **Finish** when the reviewed revision has no blocking findings and no other round trigger applies. Report any contained fixes the coordinator verified by checks after the round.
 - **Stop and ask the user** if fixes keep producing new blockers in touched code, a blocker survives repeated repairs, or evidence cannot settle whether a finding blocks. If Round 2 repairs keep surfacing architectural or failure-mode blockers in one subsystem, agree on a short design covering invariants, recovery behaviour and tests, or narrow scope before another implementation round. Also stop if missing evidence, tools or authority blocks further work. Report the pattern, evidence and decision needed. For read-only advice, prefer GPT-6.2 Astra at high. Use Claude Fable 5.2 at high for a harder decision or through the native Claude `oracle` role.
 
 ## 5. Report and finish
 
-Report the final round against the revision it assessed.
+Report the tier, assessed revision, actual models and efforts for the final round.
 
-- **Single-reviewer review** when single-reviewer mode ran. Name the actual model and effort, including the reason if it used the fallback.
-- **Full council** when all five members assessed that revision.
-- **Restricted council** when some of the five assessed it. Name each missing model and why it did not qualify, even if only one member completed the council round.
+- **L1.** Report Sol's findings and verification limits.
+- **L2.** Report both independent assessments when available. For Astra-only coverage, include `Opus 5.5 absent (<reason>)` with the reason the seat closed or was skipped.
+- **L3.** Report Opus's visual findings, the captured states and viewports, and any scorecard and target. If Opus is missing, include `Opus 5.5 absent (<reason>)` and report the visual review as incomplete.
 
-Any of these completes `code-review` when simplification is done, the reviewed revision has no blocking issues, only contained fixes follow, applicable UI criteria have capture and interaction proof, and required checks pass. UI polish also has its own completion criteria. Report an incomplete result if any condition fails. A stop for non-convergence or missing evidence does not approve the change.
+`code-review` completes when simplification is done, the selected tiers have the required assessments, the reviewed revision has no blocking issues, only contained fixes follow, applicable UI criteria have capture and interaction proof, and required checks pass. Apply the L3 polish completion criteria when applicable. Report an incomplete result if any condition fails. A stop for non-convergence or missing evidence does not approve the change.
 
-Report useful simplifications and a concise account of each round from the round record: why another round did or did not run, each reviewer’s confidence with its evidence basis and limits, missing models and reasons, which fixes received later review, the final target, unresolved disagreements and residual concerns. Never carry confidence onto later edits or call unreviewed repairs approved.
+Report useful simplifications and a concise account of each round. Include why it ran, reviewer confidence and its evidence limits, missing assessments and reasons, which fixes received later review, unresolved disagreements and residual concerns. Never carry confidence onto later edits or call unreviewed repairs approved.
 
 Put the report in chat, or in an existing PR description when updating that PR is authorized, and leave readiness and the check-in to the caller. Include any [show-video](../show-video/SKILL.md) recording; a clean or findings-only review needs no new one by itself.
 
