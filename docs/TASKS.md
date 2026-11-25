@@ -15,3 +15,4 @@
 - [x] **T11｜修复 L2 双脑盲审发现的 3 处规则/文档漂移**：补齐 `agy-codex-orchestrator` 中 Hydrogen 应急开关的周上限说明，更新 `code-review/references/codex-implementation.md` 的 `impl` 默认 `medium` 说明，放宽 `gemini/GEMINI.md` 中 Opus 5.5 异构席位适用条件至所有非 Opus 5.5 主控（含 Sonnet 5.5）。
 - [x] **T12｜补充非登录子 shell 的 PATH 兜底指引**：在 `gemini/GEMINI.md` 与 `agy-codex-orchestrator` 中明确调用 `codex` / `dispatch-codex` 前在非登录 shell 补全 `~/.local/bin` 至 `PATH`，避免新会话报 `command not found`。
 - [x] **T13｜L2 零 Claude 池消耗与静态盲审限时**：常规 L2 使用 Astra 加隔离 Neon，高危 L2+ 使用单轮静态 Sonnet 5.5。Opus 5.5 仅用于单轮 Oracle 仲裁与 L3 视觉评分。派发前冻结并打包 `review_bundle.md`，执行 60 秒无进展熔断、180 秒常规上限及 300 秒超大 PR 补查上限。
+- [x] **T14｜审查权分离与三级争议裁决**：常规和高危 L2 默认使用 Astra 加隔离 Neon，Sonnet 5.5 仅显式按需启用。严禁静默驳回 Astra 的严重发现，依次按适用条件走复现单测、书记员呈报用户或 Opus 5.5 单轮零工具客观终审。

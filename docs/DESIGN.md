@@ -6,21 +6,23 @@
 
 常规流程由 Neon 主控，配合 Codex Sol 与 Astra。可用 `agy models` 复核 Antigravity 模型 ID。
 
-- **Gemini 4 Neon**（`gemini-4-neon-high`）是兼顾速度与推理的主控模型，负责 `docs/DESIGN.md` 的架构设计、`dispatch-codex` 派单协调与验证。常规 L2 从全新隔离会话另派 Neon 作为第二席，只接收静态 `review_bundle.md`，不消耗 Claude 额度。
+- **Gemini 4 Neon**（`gemini-4-neon-high`）负责架构设计、派单协调与验收。常规和高危 L2 默认由 Astra 配全新隔离的 Neon 盲审。Neon 只接收静态 `review_bundle.md`，不继承开发历史，组合不消耗 Claude 额度。
 - **GPT-6.2 Sol** 负责日常只读侦察和代码实现，`scout` 与 `impl` 默认均为 `medium`。两类任务都应限定目标目录和关联文件，使上下文远低于 272K Token。
-- **GPT-6.2 Astra** 负责红队排雷、L2 和 L2+ 的第一席深度审查（`dispatch-codex run --role review --deep`，`high`）与 Sol 实现受阻后的攻坚。
+- **GPT-6.2 Astra** 负责只读红队排雷、L2 的第一席深度审查（`dispatch-codex run --role review --deep`，`high`）与 Sol 实现受阻后的攻坚。
 - **Gemini 4 Hydrogen**（`gemini-4-hydrogen-low`、`gemini-4-hydrogen-medium`）仅在两种情况下临时启用。单次输入超过 272K Token 或需要音视频排障时，使用其 1M 平价上下文和原生音视频支持。ChatGPT Plus 达到 5 小时或周上限时，用 Hydrogen 过渡到额度恢复。
 - **Gemini 4 Carbon**（`gemini-4-carbon-high`）仅由用户按需手动切换。
-- **Claude Sonnet 5.5**（`claude-sonnet-5-5-high`）在高危 L2+ 中接替 Neon，使用全新隔离会话对静态包做单轮盲审，额度权重为 Opus 的一半。
-- **Claude Opus 5.5**（`claude-opus-5-5-high`）只派发单轮静态 Oracle 仲裁与 L3 UI 评分。Oracle 仅处理双席之间或主控与 Astra 之间严重且未解决的分歧。
+- **Claude Sonnet 5.5**（`claude-sonnet-5-5-high`）仅在用户明确要求一次额外 Anthropic 独立全审时作为 L2 第二席，对静态包做单轮盲审。
+- **Claude Opus 5.5** 审查席位仅用于第三级客观终审（默认 `claude-opus-5-5-medium`，极复杂时用 `claude-opus-5-5-high`）和 L3 UI 评分（`claude-opus-5-5-high`）。
 
-Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调。Neon 与 Claude 主控均用 `dispatch-codex run --role scout` 将代码库摸排、调用链追踪和日志检索交给 Sol，主控依据侦察结果做架构决策和验收。Opus 5.5 或 Sonnet 5.5 担任主控时，L2 和 L2+ 只派发 `dispatch-codex run --role review --deep` 给 Astra，由主控复核。
+Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调。Neon 与 Claude 主控均用 `dispatch-codex run --role scout` 将代码库摸排、调用链追踪和日志检索交给 Sol，主控依据侦察结果做架构决策和验收。Claude 主控时，L2 只用 `dispatch-codex run --role review --deep` 派 Astra，由主控直接复核。
+
+主控必须记录并处理 Astra 红队或 L2 提出的 `Blocking / High / Critical` 发现，严禁静默驳回。先由 Sol 用最小复现单测核验具体缺陷。测试无法裁定的常规或主观分歧由主控中立呈报用户。仍未解决的高危客观真伪或可达性争议交 Opus 5.5 单轮零工具终审，使用 ≤20K Token 的 `/tmp/arbitration_brief.md`，允许以 `INSUFFICIENT_CONTEXT` 退回。敏感安全争议可能触发非 CVP 账号静默降至 Opus 4.8，安全结论须有复现测试、Astra 和人工复核。
 
 核心目标：
 1. **P0 顺手修复**：修补模型匹配漂移（Fable 5.2 / Sonnet 5.5 / Haiku 5.5）、清理退役 Skill 引用与 `TOOLING-CHANGES.md` 本机路径、`AGENTS.md` 压回 14 KB 预算内零警告、修复 `inventory.mjs` 与 `proof-publication.mjs` 细节缺陷。
 2. **双端一致安装**：支持 `./install-skills --only <skill>` 首次子集安装（且不误删共享 `~/.local/bin` 中其他 Harness 的命令）；为 Codex 提供自包含、零外部 Skill 依赖的只读审查 Profile（`review-sol` / `redteam-astra`）与极简执行者守则（`codex/executor-AGENTS.md`）。
 3. **确定性单入口派单与并发（`dispatch-codex`）**：用 Effect v4 + TypeScript 封装唯一派单 CLI，统一 ChatGPT 登录锁定、角色与 Effort 分级、原子锁三轮熔断、显式 `git worktree` 隔离（禁用黑盒 `codex exec --worktree`）、完整 `git status -uall` + `git diff HEAD --stat` 验收输出、以及批量并发子任务（单点失败不拖垮兄弟任务）。
-4. **评审阶梯与 Claude 池节流**：`code-review` 使用 L1（Sol）、L2（Astra + 隔离 Neon）、L2+（Astra + 单轮静态 Sonnet 5.5）与 L3（Opus 5.5 视觉评分），统一静态评审包、盲审隔离、卡死判定与硬时限；改造 `grilling` 默认支持 `docs/DESIGN.md`。
+4. **评审阶梯与 Claude 池节流**：`code-review` 使用 L1（Sol）、L2（Astra + 隔离 Neon，用户显式要求时由 Sonnet 担任第二席）和 L3（Opus 5.5 视觉评分）。统一静态评审包、盲审隔离和时限，并按第 2.5 节裁定争议。改造 `grilling` 默认支持 `docs/DESIGN.md`。
 5. **双端确定性护栏**：父端 Antigravity `PreToolUse` Hook（`packages/guardrails/agy-pretool-guard.ts`）与执行端 Codex `execpolicy` 规则（`packages/guardrails/codex-guardrails.rules`）各守边界。
 
 ## 2. 模块边界与接口契约
@@ -77,9 +79,14 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
 - `packages/guardrails/hooks.template.json`：指向本仓库 `agy-pretool-guard.ts` 的 `PreToolUse` 模板。
 
 ### 2.5 Skill 适配与全局配置激活
-- `skills/code-review/` 按第一节分配审查模型。常规 L2 用 Astra 加全新隔离的 Neon。鉴权、权限、安全、隐私、计费、支付、迁移、持久化格式、发布或 CI 流程、发布前大改使用 L2+，由 Sonnet 5.5 接替 Neon 做单轮静态盲审。Claude 主控时只派 Astra，由主控复核。Opus 5.5 仅用于单轮静态 Oracle 或 L3 视觉评分。
+- `skills/code-review/` 对常规和高危 L2 均默认派 Astra（`--deep`，`high`）加全新隔离的 Neon（`gemini-4-neon-high`），不消耗 Claude 额度。仅用户显式要求额外 Anthropic 全审时用 Sonnet 5.5（`claude-sonnet-5-5-high`）作单轮静态第二席。Claude 主控时只派 Astra，由主控复核。
 - L2 派发前冻结同一份目标，预打包静态 `review_bundle.md`，包含设计和需求摘要、`git diff --stat` 与冻结 diff。超过 1,500 行时，包内放核心非测试 diff 和关键调用方片段。两席隔离，双方交卷前各自保密。静态席位在 1,500 行及以下零工具调用，超大 PR 缺少关键调用方时最多做 2 次定向 `read_file`，禁止搜索、终端操作和嵌套 `agy -p` 派单。
 - 额度等待立即关闭，连续 60 秒无工具或输出进展也关闭。单轮静态席位从启动起上限 180 秒，仅超过 1,500 行且确需补查时上限 300 秒。缺席时记录 `<模型> 缺席（原因）`，L2 继续用 Astra，L3 缺 Opus 时标记视觉评审未完成。严禁静默换模。
+- 主控严禁静默驳回 Astra 红队或 L2 的 `Blocking / High / Critical` 发现。逐条记录证据与处理结果，并按三级裁决阶梯处理。
+  1. 派 Sol 编写并运行最小复现单测，核验具体 Bug、竞态、边界崩溃或泄漏。测试因所指行为失败即确认缺陷并修复。
+  2. 常规或主观取舍无法靠单测裁定时，主控以书记员身份按 `争议点 | Astra 原始指控与行号 | 主控反驳理由 | 修复成本评估` 四列表中立呈报用户拍板。此级不消耗 Claude 额度。
+  3. 第一级未解决的高危客观争议，交 Opus 5.5 判断缺陷的真伪、可达性或协议及并发不变量是否被破坏。用 ≤20K Token 的 `/tmp/arbitration_brief.md` 收齐完整函数体、结构体和类型定义、接口契约、复现证据及双方原文（含 Astra 指控行号）。终审默认用 `claude-opus-5-5-medium`，极复杂时用 `claude-opus-5-5-high`，单轮零工具调用，180 秒硬上限。Prompt 鼓励以 `INSUFFICIENT_CONTEXT` 退回并列出缺失文件或符号。敏感安全或漏洞链争议中，Anthropic 非 CVP 账号可能静默降至 Opus 4.8。安全结论须经复现测试、Astra 与人工复核。
+- Opus 5.5 只担任第三级客观终审及 L3 视觉评分席位。L3 用 `claude-opus-5-5-high`。
 - 改造 `skills/grilling/`（`BASE.md` + `variants/`）使仓库内 `docs/DESIGN.md` 成为无 Obsidian 时的默认交付落盘路径。
 - 本地激活：
   - 备份 `~/.gemini/GEMINI.md` 与 `~/.codex/rules/default.rules`；

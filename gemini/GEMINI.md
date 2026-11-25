@@ -17,7 +17,7 @@
 
 ## 3. 双额度池分工与统一派单规范（侦察 → 架构 → 排雷 → 编码 → 终审）
 - **常规主力分工（双池极简主线）**
-  - **Antigravity 主控**由 Gemini 4 Neon（`gemini-4-neon-high`）负责架构设计、筛选 Astra 排雷发现与验收。Gemini 池耗尽时由 Claude Opus 5.5 / Sonnet 5.5 接管。常规编排优先 `claude-sonnet-5-5-high` 或 `claude-opus-5-5-medium`。Opus 5.5 或 Sonnet 5.5 主控时，L2 和 L2+ 只派 Astra（`--deep`），由主控直接复核，避免重复消耗 Claude 额度。Gemini 4 Carbon（`gemini-4-carbon-high`）仅由用户按需手动切换。
+  - **Antigravity 主控**由 Gemini 4 Neon（`gemini-4-neon-high`）负责架构设计、核验 Astra 排雷发现与验收。Gemini 池耗尽时由 Claude Opus 5.5 / Sonnet 5.5 接管。接管主控时优先用 `claude-sonnet-5-5-high` 或 `claude-opus-5-5-medium`。Gemini 4 Carbon（`gemini-4-carbon-high`）仅由用户按需手动切换。
   - **Codex 执行与日常侦察**统一走 `dispatch-codex`。入口自动清除 `CODEX_API_KEY` / `OPENAI_API_KEY`、锁定 ChatGPT 登录、注入任务边界，并执行原子锁、三轮熔断和 WSL `/mnt/` 护栏。非登录子 shell 若默认 `PATH` 缺少 `~/.local/bin`，调用前先补 `export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"`。
     - **日常只读侦察（`--role scout`）**默认用 GPT-6.2 Sol `medium` 和 `--ephemeral`，简单查找可传 `--effort low`。Neon、Opus 和 Sonnet 主控均将仓库摸排、调用链追踪与日志检索派给 Sol，使用 ChatGPT Plus 额度以保留共享 Gemini / Opus 配额。
     - **主力编码实现（`--role impl`）**由 GPT-6.2 Sol 承担，主控负责派单与验收。默认用 `medium`，简单脚手架或纯文档改写可传 `--effort low`，复杂核心逻辑或跨模块重构显式传 `--effort high` 或 `--effort xhigh`。每次派发一个原子子任务，指定稳定的 `--task <id>`、相关设计和验收命令。
@@ -25,7 +25,7 @@
 - **排雷、审查与执行控制**
   - **只读红队排雷（GPT-6.2 Astra `high`）**：`docs/DESIGN.md` 定稿前，或涉及并发、状态机、强一致链路时，派发一次只读审查（自动启用 `redteam-astra` Profile 与 `--ephemeral`）：
     `dispatch-codex run --role redteam --prompt "不要重构整体架构。只读审查 docs/DESIGN.md，列出并发竞态、故障恢复、资源泄漏和极端边界输入的 Top 5 致命隐患，每条不超过 3 句。"`
-    收到报告后，由你剔除过度防御的噪音，仅将真实生产风险补入 `docs/DESIGN.md`。
+    红队或 L2 报告中的 `Blocking / High / Critical` 发现必须记录证据与处理结果，主控严禁单方面静默驳回，按下方三级裁决阶梯处理。将证实的生产风险补入 `docs/DESIGN.md`。
   - **日常代码审查**：L1 单审走 `dispatch-codex run --role review`（Sol `high`）。按下方规则安排 L2 深度审查。
   - **攻坚与硬熔断**：Sol 连续失败 2 轮后 `dispatch-codex` 自动阻断并要求切换 `dispatch-codex run --role escalate --task <task-id>`（Astra `xhigh`）；单任务累计 3 轮硬熔断（退出码 3），立即停止循环并汇总根因与备选方案交由用户拍板，仅在用户确认后才执行 `dispatch-codex reset --task <task-id>`。
   - **多模块无依赖并发**：使用 `dispatch-codex batch --plan <tasks.json>` 在显式独立 `git worktree` 中并发执行（禁用黑盒 `codex exec --worktree`），单项失败不中断兄弟任务。
@@ -33,14 +33,19 @@
   1. **单次输入 >272K Token 或音视频排障**。Sol 支持文本和图片，超 272K 涨价，Neon 超 200K 也进入长上下文计费档。Hydrogen 全程 1M 平价（`$1.50/$7.50`），原生支持音视频，遇到这两类输入优先临时切用。
   2. **ChatGPT Plus 撞上 5 小时或周上限**。在 Antigravity 中临时切用 Hydrogen，等额度恢复。
 - **L2 异构双脑盲审与 Claude 池节流**
-  - **常规 L2 默认组合（零消耗 Claude 池）**：GPT-6.2 Astra（`dispatch-codex run --role review --deep`，`high`）配全新隔离的 Gemini 4 Neon（`gemini-4-neon-high`）。Neon 不继承开发对话历史，只接收预打包的静态 `review_bundle.md`。
-  - **高危 L2+**：涉及鉴权、权限、安全、隐私、计费、支付、迁移、持久化格式、发布或 CI 流程、发布前大改时，二席改为全新的 **Claude Sonnet 5.5（`claude-sonnet-5-5-high`）**，只做单轮静态盲审，保留 Anthropic 异构视角，额度权重为 Opus 的一半。Claude 主控时只派 Astra，由主控复核。
-  - **强制单轮静态打包纪律**：派发前将 `DESIGN` 和需求摘要、`git diff --stat` 与冻结 diff 打包到静态快照（如 `/tmp/review_bundle.md`）。超过 1,500 行时，包内放核心非测试 diff 和关键调用方片段。两席独立审查，双方交卷前各自保密，禁止将结论提前写入共享文档或 `/swarm` 的 `main` 频道。Neon 和 Claude 静态席位禁止自由探索，1,500 行及以下零工具调用，超大 PR 缺少关键调用方时最多做 2 次定向 `read_file`。
+  - **常规与高危 L2 首轮默认盲审（零消耗 Claude 池）**：GPT-6.2 Astra（`dispatch-codex run --role review --deep`，`high`）配全新隔离的 Gemini 4 Neon（`gemini-4-neon-high`）。Neon 不继承开发对话历史，只接收静态 `review_bundle.md`，独立核对 Sol 实现是否违背契约。
+  - **Sonnet 5.5 二席仅由用户显式启用**：用户明确要求额外的 Anthropic 独立全审时，才用全新隔离的 `claude-sonnet-5-5-high` 接替 Neon。遵守同样的静态打包、单轮禁自由探索、60s 卡死熔断及 180s / 300s 上限。Claude 主控时只派 Astra，由主控直接复核。
+  - **强制单轮静态打包纪律**：派发前将 `DESIGN` 和需求摘要、`git diff --stat` 与冻结 diff 打包到静态快照（如 `/tmp/review_bundle.md`）。超过 1,500 行时，包内放核心非测试 diff 和关键调用方片段。两席独立审查，双方交卷前各自保密，禁止将结论提前写入共享文档或 `/swarm` 的 `main` 频道。Neon 和 Sonnet 的 L2 静态席位禁止自由探索，1,500 行及以下零工具调用，超大 PR 缺少关键调用方时最多做 2 次定向 `read_file`。
   - **区分卡死与活跃推进**：额度等待（如 `waiting`）立即关闭，连续 **60s** 无工具或输出进展也关闭。活跃席位单轮硬上限为 **180s**，仅超大 PR 确需补查时可延至 **300s**。L2 二席失败、卡住或超时后关闭该席位，继续用 Astra，最终报告明示 `<模型> 缺席（原因）`。
-- **最珍贵异构底牌（Claude Opus 5.5，`claude-opus-5-5-high`）**：严禁用于常规 L2 或 L2+ 盲审，只派发以下两类单轮静态评审：
-  1. **架构或评审重大分歧 Oracle 裁决**：双席之间或主控与 Astra 之间有严重未收敛冲突时，提交静态包和分歧证据，请 Opus 单轮裁决。
-  2. **L3 UI/前端视觉设计打分**：结合 `frontend-ui-validation` 截图按 `design` 固定准则评分。Opus 缺席时报告 `Opus 5.5 缺席（原因）`，并标记视觉评审未完成。
-- **静态席位派发**：优先使用全新隔离的只读 `/swarm` worker 或全新隔离会话。非交互式派发 Claude 席位用 `agy --model <claude-sonnet-5-5-high|claude-opus-5-5-high> --mode plan --sandbox --print-timeout 180s -p "..."`，常规 L2 则用 `gemini-4-neon-high`。仅确需补查的超大 PR 可在启动时改用 `--print-timeout 300s`。按 `code-review` 的 `references/reviewer-dispatch.md` 在 prompt 首行覆写只读角色边界，忽略 `GEMINI.md` 派单规则，禁止 shell 写操作、`codex`、嵌套 `agy -p` 或派发其他 worker。严禁静默换模或冒充指定模型。
+- **三级争议裁决阶梯**
+  1. **客观证伪单测优先**：Astra 指出具体 Bug、竞态、边界崩溃或资源泄漏时，禁止模型口头辩论。派 Codex Sol 编写并运行最小复现单测。测试因所指行为失败即坐实缺陷，直接修复。
+  2. **主观或日常争议由书记员呈报用户**：单测无法裁定的常规设计、风格或取舍争议，由主控按 `争议点 | Astra 原始指控与行号 | 主控反驳理由 | 修复成本评估` 四列表中立呈报，保留原话和行号，由用户拍板。此级不消耗 Claude 额度。
+  3. **核心或高危客观技术分歧交 Opus 5.5 终审**：第一级未能解决缺陷是否真实可达、是否违背协议或并发不变量的问题时，提交 ≤20K Token、可独立阅读的 `/tmp/arbitration_brief.md`。贴齐相关完整函数体、结构体和类型定义、接口契约、复现证据、Astra 原始指控及行号、主控反驳原文。由 `claude-opus-5-5-medium` 单轮零工具独立裁决，极复杂时可用 `claude-opus-5-5-high`。
+     - Prompt 必须允许并鼓励输出 `INSUFFICIENT_CONTEXT`，列出缺失的确切文件名或符号，禁止猜测补全。
+     - 只裁定客观真伪与可达性。设计优劣、风格或架构偏好交第二级。
+     - 敏感安全攻防或漏洞链争议中，Anthropic 非 CVP 账号可能被安全分类器静默降至旧版 Opus 4.8。安全结论以复现测试、Astra 和人工复核为准，Opus 裁决仅作补充证据。
+- **Claude Opus 5.5 异构席位**只用于第三级客观终审和 **L3 UI/前端视觉设计打分**，严禁用于常规 L2 盲审。L3 用 `claude-opus-5-5-high`，结合 `frontend-ui-validation` 截图按 `design` 固定准则评分。Opus 缺席时报告 `Opus 5.5 缺席（原因）`，并标记视觉评审未完成。
+- **静态席位派发**：优先使用全新隔离的只读 `/swarm` worker 或全新隔离会话。非交互式示例为 `agy --model gemini-4-neon-high --mode plan --sandbox --print-timeout 180s -p "$review_prompt"`。显式按需 Anthropic 全审用 `claude-sonnet-5-5-high`，L3 视觉用 `claude-opus-5-5-high`。客观终审用 `agy --model claude-opus-5-5-medium --mode plan --sandbox --print-timeout 180s -p "$arbitration_prompt"`，极复杂时切为 `claude-opus-5-5-high`。终审 Prompt 内嵌完整简报，单轮零工具，硬上限 180s。仅确需补查的超大 L2 PR 可用 `--print-timeout 300s`。按 `code-review` 的 `references/reviewer-dispatch.md` 在 Prompt 首行覆写只读角色边界，忽略 `GEMINI.md` 派单规则，禁止 shell 写操作、`codex`、嵌套 `agy -p` 或派发其他 worker。严禁静默换模或冒充指定模型。
 
 ## 4. 验收、双端护栏与 Git 纪律
 - Codex 每次返回后，必须在其**实际执行的工作树目录（`worktreePath`）**核查 `git status --short --untracked-files=all` 与 `git diff HEAD --stat`（防漏验未跟踪新文件与暂存改动、防越界修改），再核验 lint / 测试输出。
