@@ -5,7 +5,7 @@ description: 'Use when orchestrating GPT-6.2 Sol or Astra via dispatch-codex for
 
 # Orchestrate Codex
 
-Verify ChatGPT sign-in with `codex login status` before dispatching. Use `dispatch-codex --help` and each subcommand's help for options. Start with `run --dry-run` when routing, worktree, or retry state needs checking.
+Verify ChatGPT sign-in with `codex login status` before dispatching. In non-login shells where `~/.local/bin` is missing from `PATH`, prepend `export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"` before running `codex` or `dispatch-codex`. Use `dispatch-codex --help` and each subcommand's help for options. Start with `run --dry-run` when routing, worktree, or retry state needs checking.
 
 Use Gemini 4 Neon (`gemini-4-neon-high`) to coordinate GPT-6.2 Sol and GPT-6.2 Astra. Switch coordination to Claude Opus 5.5 or Sonnet 5.5 when the Gemini quota is exhausted. Reserve Gemini 4 Carbon (`gemini-4-carbon-high`) for manual selection by the user.
 

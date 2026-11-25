@@ -18,7 +18,7 @@
 ## 3. 双额度池分工与统一派单规范（侦察 → 架构 → 排雷 → 编码 → 终审）
 - **常规主力分工（双池极简主线）**
   - **Antigravity 主控**由 Gemini 4 Neon（`gemini-4-neon-high`）负责架构设计、筛选 Astra 排雷发现与验收。Gemini 池耗尽时由 Claude Opus 5.5 / Sonnet 5.5 接管。常规编排优先 `claude-sonnet-5-5-high` 或 `claude-opus-5-5-medium`，复杂架构与关键裁决用 `claude-opus-5-5-high`。Opus 5.5 主控时，L2 只派 Astra（`--deep`），由主控复核，避免重复消耗 Opus 额度。Gemini 4 Carbon（`gemini-4-carbon-high`）仅由用户按需手动切换。
-  - **Codex 执行与日常侦察**统一走 `dispatch-codex`。入口自动清除 `CODEX_API_KEY` / `OPENAI_API_KEY`、锁定 ChatGPT 登录、注入任务边界，并执行原子锁、三轮熔断和 WSL `/mnt/` 护栏。
+  - **Codex 执行与日常侦察**统一走 `dispatch-codex`。入口自动清除 `CODEX_API_KEY` / `OPENAI_API_KEY`、锁定 ChatGPT 登录、注入任务边界，并执行原子锁、三轮熔断和 WSL `/mnt/` 护栏。非登录子 shell 若默认 `PATH` 缺少 `~/.local/bin`，调用前先补 `export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"`。
     - **日常只读侦察（`--role scout`）**默认用 GPT-6.2 Sol `medium` 和 `--ephemeral`，简单查找可传 `--effort low`。Neon、Opus 和 Sonnet 主控均将仓库摸排、调用链追踪与日志检索派给 Sol，使用 ChatGPT Plus 额度以保留共享 Gemini / Opus 配额。
     - **主力编码实现（`--role impl`）**由 GPT-6.2 Sol 承担，主控负责派单与验收。默认用 `medium`，简单脚手架或纯文档改写可传 `--effort low`，复杂核心逻辑或跨模块重构显式传 `--effort high` 或 `--effort xhigh`。每次派发一个原子子任务，指定稳定的 `--task <id>`、相关设计和验收命令。
     - **上下文控量（严控 <272K）**要求 `scout` 和 `impl` 明确目标目录与关联文件，避免一次喂入整仓。Sol 超过 272K Token 时进入长上下文计费档（`$2/$10` → `$4/$15`）。
