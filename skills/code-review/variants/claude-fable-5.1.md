@@ -36,11 +36,12 @@ The simplifier returns its patch, a concrete before/after explanation, checks an
 Honor the user's explicit review scope. Otherwise, choose the applicable tier and proceed.
 
 - **L1 — Single reviewer (default).** Launch one fresh findings-only **GPT-6.2 Sol** reviewer at **high** via `dispatch-codex run --role review` for ordinary features, bug fixes, tests, docs, clean rebases and small follow-ups. Keep Opus off for L1, including when Sol is unavailable.
-- **L2 — Two-model blind review.** Launch fresh findings-only **GPT-6.2 Astra** at **high** via `dispatch-codex run --role review --deep`, with a separate **Claude Opus 5.5** seat at **high** when available. When Claude Opus 5.5 is already coordinating, run Astra alone with `--deep`. Use L2 for an explicit deep review or when any of these triggers applies:
-  - Authentication, permissions, security, privacy, billing, payments, migrations, persisted formats, release or CI pipelines.
-  - Broad structural changes across packages or subsystems, or a change to a public API or contract.
-  - A severe, disputed or hard-to-diagnose blocker after L1. Escalate before asking the user to settle an inconclusive finding.
-- **L3 — UI and visual polish.** Use for substantial UI changes or a request to polish or score the UI. Use L1 or L2 for code review when it also applies. Have **Claude Opus 5.5** at **high** review and score the captures against fixed `design` criteria. For polish requests, use the [UI polish scoring and single-reviewer rules](references/ui-polish.md) throughout, with one Opus scorecard per round including the final round. Route authorized fixes via `dispatch-codex run --role impl` and recapture the affected UI.
+- **L2 — Two-model blind review.** Use L2 for an explicit deep review, broad changes across packages or subsystems, changes to public APIs or contracts, or a severe, disputed or hard-to-diagnose blocker after L1. Escalate before asking the user to settle an inconclusive finding. The default pairs fresh findings-only **GPT-6.2 Astra** at **high** (`dispatch-codex run --role review --deep`) with a fresh, isolated **Gemini 4 Neon** seat (`gemini-4-neon-high`) that reads the pre-packaged static `review_bundle.md`. This pair uses no Claude quota.
+  - **L2+ — High-risk upgrade.** For authentication, permissions, security, privacy, billing, payments, migrations, persisted formats, release or CI pipelines, or major pre-release changes, use fresh **Claude Sonnet 5.5** (`claude-sonnet-5-5-high`) in place of Neon. Sonnet reviews the static bundle in a single pass and provides an independent Anthropic assessment at half Opus's quota weight.
+  - **Claude coordinator.** If Opus 5.5 or Sonnet 5.5 is coordinating, run Astra alone with `--deep` and have the coordinator review directly.
+- **L3 — UI and visual polish.** Use for substantial UI changes or a request to polish or score the UI. Use L1 or L2 for code review when it also applies. Have **Claude Opus 5.5** at **high** score the captures against fixed `design` criteria in a single pass. For polish requests, use the [UI polish scoring and single-reviewer rules](references/ui-polish.md) throughout, with one Opus scorecard per round including the final round. Route authorized fixes via `dispatch-codex run --role impl` and recapture the affected UI.
+
+Reserve **Claude Opus 5.5** for L3 visual scoring and single-pass static-bundle Oracle adjudication when two reviewers, or a coordinator and Astra, have a severe conflict that the evidence has not resolved.
 
 For a standalone follow-up or clean rebase after a finished review, apply the triggers to what changed since that review. Verify the rebased diff with whitespace preserved, for example with `git range-diff` or by inspecting conflict hunks. Use `git patch-id --stable` only to match corresponding commits. Review the new revision.
 
@@ -48,7 +49,7 @@ For any affected UI, use `frontend-ui-validation` to capture the screens and exe
 
 ### Launch independent reviewers
 
-Follow [reviewer dispatch](references/reviewer-dispatch.md) to freeze the L2 target, keep the seats' findings private until both submit, and bound the Opus wait to 180 seconds. If the Opus seat is absent, close it and continue L2 with Astra. Use [wait-efficiently](../wait-efficiently/SKILL.md) for pending results.
+Follow [reviewer dispatch](references/reviewer-dispatch.md) to pre-package a static `review_bundle.md` before launching L2 and keep each seat's findings private until both submit. Claude seats review in a single pass, with zero tool calls for diffs up to 1,500 lines and at most two targeted `read_file` checks for larger diffs. Close a static seat immediately on a quota wait or after 60 seconds without tool or output progress. Allow active progress up to the 180-second ceiling, or up to 300 seconds for oversized diffs that require targeted reads. If the second seat is absent, close it, record `<Model> absent (<reason>)`, and continue L2 with Astra. Use [wait-efficiently](../wait-efficiently/SKILL.md) for pending results.
 
 Count only fresh assessments from the selected models at high on that revision. Disclose context contamination and record missing models with reasons. L1 requires Sol, L2 requires Astra, and L3 requires a verified Opus visual assessment. Report any tier missing its required assessment as incomplete.
 
@@ -83,14 +84,14 @@ Route authorized fixes and selected UI improvements through Step 2's implementat
 
 - **Run another round** after a blocking fix, a selected UI improvement or an uncontained fix. Keep the tier unless repairs introduce a Step 3 trigger or a post-round blocker escalates L1 to L2. Honor explicit review scope and the L3 polish round limit. Fresh reviewers assess the full resulting change under the same criteria.
 - **Finish** when the reviewed revision has no blocking findings and no other round trigger applies. Report any contained fixes the coordinator verified by checks after the round.
-- **Stop and ask the user** if fixes keep producing new blockers in touched code, a blocker survives repeated repairs, or evidence cannot settle whether a finding blocks. If Round 2 repairs keep surfacing architectural or failure-mode blockers in one subsystem, agree on a short design covering invariants, recovery behaviour and tests, or narrow scope before another implementation round. Also stop if missing evidence, tools or authority blocks further work. Report the pattern, evidence and decision needed. For read-only advice, prefer GPT-6.2 Astra at high. Use Claude Fable 5.2 at high for a harder decision or through the native Claude `oracle` role.
+- **Stop and ask the user** if fixes keep producing new blockers in touched code, a blocker survives repeated repairs, or evidence cannot settle whether a finding blocks. If Round 2 repairs keep surfacing architectural or failure-mode blockers in one subsystem, agree on a short design covering invariants, recovery behaviour and tests, or narrow scope before another implementation round. Also stop if missing evidence, tools or authority blocks further work. Report the pattern, evidence and decision needed. For read-only advice, prefer GPT-6.2 Astra at high. Use the Step 3 Opus Oracle for severe unresolved review conflicts. For other hard decisions, use Claude Fable 5.2 at high or the native Claude `oracle` role.
 
 ## 5. Report and finish
 
 Report the tier, assessed revision, actual models and efforts for the final round.
 
 - **L1.** Report Sol's findings and verification limits.
-- **L2.** Report both independent assessments when available. For Astra-only coverage, include `Opus 5.5 absent (<reason>)` with the reason the seat closed or was skipped.
+- **L2.** Report both independent assessments when available. For Astra-only coverage, include `<Second-seat model> absent (<reason>)` with the reason the seat closed or was skipped, for example `Neon absent (<reason>)` or `Sonnet 5.5 absent (<reason>)`.
 - **L3.** Report Opus's visual findings, the captured states and viewports, and any scorecard and target. If Opus is missing, include `Opus 5.5 absent (<reason>)` and report the visual review as incomplete.
 
 `code-review` completes when simplification is done, the selected tiers have the required assessments, the reviewed revision has no blocking issues, only contained fixes follow, applicable UI criteria have capture and interaction proof, and required checks pass. Apply the L3 polish completion criteria when applicable. Report an incomplete result if any condition fails. A stop for non-convergence or missing evidence does not approve the change.

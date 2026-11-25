@@ -14,3 +14,4 @@
 - [x] **T10｜Sol 默认中档与 Hydrogen 应急切换**。Neon 和 Claude 主控均将日常侦察交给 Sol。`scout` 与 `impl` 默认 `medium`，支持 `--effort low`，派单限定目录和文件以控制在 272K Token 以下。Hydrogen 仅用于超长输入或音视频排障，以及 ChatGPT Plus 达到额度上限时的临时过渡。
 - [x] **T11｜修复 L2 双脑盲审发现的 3 处规则/文档漂移**：补齐 `agy-codex-orchestrator` 中 Hydrogen 应急开关的周上限说明，更新 `code-review/references/codex-implementation.md` 的 `impl` 默认 `medium` 说明，放宽 `gemini/GEMINI.md` 中 Opus 5.5 异构席位适用条件至所有非 Opus 5.5 主控（含 Sonnet 5.5）。
 - [x] **T12｜补充非登录子 shell 的 PATH 兜底指引**：在 `gemini/GEMINI.md` 与 `agy-codex-orchestrator` 中明确调用 `codex` / `dispatch-codex` 前在非登录 shell 补全 `~/.local/bin` 至 `PATH`，避免新会话报 `command not found`。
+- [x] **T13｜L2 零 Claude 池消耗与静态盲审限时**：常规 L2 使用 Astra 加隔离 Neon，高危 L2+ 使用单轮静态 Sonnet 5.5。Opus 5.5 仅用于单轮 Oracle 仲裁与 L3 视觉评分。派发前冻结并打包 `review_bundle.md`，执行 60 秒无进展熔断、180 秒常规上限及 300 秒超大 PR 补查上限。
