@@ -11,6 +11,8 @@ Antigravity 的 Flash 已下线，由 Gemini 4 Hydrogen 接替。常规流程由
 - **Gemini 4 Carbon**（`gemini-4-carbon-high`）是最重的深度推理旗舰，会快速消耗同一 Gemini Pro 配额池。Carbon 不进入常规流程，仅在少数特别复杂的顶层架构任务中由用户手动切换启用。
 - **Claude Opus 5.5**（`claude-opus-5-5-high`）用于指定的 L2 异构盲审、L3 UI 评分，以及 Neon 与 Astra 意见分歧时的 Oracle 仲裁。
 
+Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调。用 `dispatch-codex run --role scout` 将代码库摸排、调用链追踪和日志检索交给 Sol，主控依据侦察结果做架构决策和验收。Opus 5.5 担任主控时，L2 只派发 `dispatch-codex run --role review --deep` 给 Astra，由主控复核。
+
 核心目标：
 1. **P0 顺手修复**：修补模型匹配漂移（Fable 5.2 / Sonnet 5.5 / Haiku 5.5）、清理退役 Skill 引用与 `TOOLING-CHANGES.md` 本机路径、`AGENTS.md` 压回 14 KB 预算内零警告、修复 `inventory.mjs` 与 `proof-publication.mjs` 细节缺陷。
 2. **双端一致安装**：支持 `./install-skills --only <skill>` 首次子集安装（且不误删共享 `~/.local/bin` 中其他 Harness 的命令）；为 Codex 提供自包含、零外部 Skill 依赖的只读审查 Profile（`review-sol` / `redteam-astra`）与极简执行者守则（`codex/executor-AGENTS.md`）。
@@ -41,14 +43,16 @@ Antigravity 的 Flash 已下线，由 Gemini 4 Hydrogen 接替。常规流程由
 ### 2.3 确定性派单 CLI：`dispatch-codex`
 位于 `skills/agy-codex-orchestrator/`，通过 `install-commands.mjs` 注册为 `~/.local/bin/dispatch-codex`（`runtime: ["node"]`）：
 - **子命令**：
-  - `dispatch-codex run --role <redteam|impl|escalate|review> [options]`
+  - `dispatch-codex run --role <redteam|impl|escalate|review|scout> [options]`
   - `dispatch-codex batch --plan <json-file> [--concurrency 2]`（显式独立 `git worktree` 并发，捕获单项失败不中断兄弟任务，统一输出逐项状态与路径）
   - `dispatch-codex status --task <id>` / `dispatch-codex reset --task <id>`
 - **角色映射（均强清 `CODEX_API_KEY` / `OPENAI_API_KEY` 并锁定 `model_provider="openai"` + `forced_login_method="chatgpt"`）**：
   - `redteam`：`gpt-6.2-astra`、`high`、`-s read-only --ephemeral`（若已安装 `redteam-astra.config.toml` 则附带 `-p redteam-astra`）
   - `review`：默认 `gpt-6.2-sol`（`--deep` 切 `gpt-6.2-astra`）、`high`、`-s read-only --ephemeral`（已安装则附带 `-p review-sol` / `-p redteam-astra`）
-  - `impl`：`gpt-6.2-sol`、默认 `high`（可 `--effort xhigh`）、`-s workspace-write`
-  - `escalate`：`gpt-6.2-astra`、默认 `xhigh`（可 `--effort high|xhigh`）、`-s workspace-write`
+  - `impl`：`gpt-6.2-sol`、默认 `high`、`-s workspace-write`
+  - `escalate`：`gpt-6.2-astra`、默认 `xhigh`、`-s workspace-write`
+  - `scout`：`gpt-6.2-sol`、默认 `medium`、`-s read-only --ephemeral`，跳过审查 Profile 和写任务重试锁。
+  - 所有角色均可用 `--effort <medium|high|xhigh>` 覆盖默认值。
 - **Prompt 边界注入**：统一在发送给 Codex 的 prompt 顶部附加最高优先级任务边界声明，压制第三方仓库 `AGENTS.md` 中的无关编排规则。
 - **原子状态与三轮熔断**：
   - 默认状态目录：`~/.local/state/agy-dispatch/<repo-hash>/<task-id>.json`（可用 `--state-dir` 覆盖便于测试）。
@@ -75,7 +79,7 @@ Antigravity 的 Flash 已下线，由 Gemini 4 Hydrogen 接替。常规流程由
   - 备份 `~/.gemini/GEMINI.md` 与 `~/.codex/rules/default.rules`；
   - Antigravity 侧用 `--only` 安装精简后的 13 个核心 Skill（含 `agy-codex-orchestrator`），移除无关的 `just-do-it` / `speak-fking-english` / `handoff` / `session-recall` / `pr-proof-pack` / `show-video`；
   - Codex 侧用 `--only` 安装 5 个编码与质量 Skill + `./install-codex-profiles` + `~/.codex/AGENTS.md` + `~/.codex/rules/guardrails.rules`；
-  - 安装 `~/.gemini/config/hooks.json` 并重写 `~/.gemini/GEMINI.md`。
+  - 安装 `~/.gemini/config/hooks.json`，并将 `~/.gemini/GEMINI.md` 符号链接指向纳入仓库版本管理的 `gemini/GEMINI.md`。
 
 ## 3. 验收标准
 - 仓库全部检查绿灯：`bun run validate:effect`（0 error、**0 warning**）与 `./tests/skills-test` 全部通过。

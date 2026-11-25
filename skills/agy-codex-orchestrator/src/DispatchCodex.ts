@@ -21,12 +21,20 @@ import { homedir } from "node:os"
 
 import { checkedText, platformErrorExitCode } from "../../../packages/effect-cli/CheckedProcess.ts"
 
-export const roles = ["redteam", "impl", "escalate", "review"] as const
-export const efforts = ["high", "xhigh"] as const
+export const roles = ["redteam", "impl", "escalate", "review", "scout"] as const
+export const efforts = ["medium", "high", "xhigh"] as const
 const Role = Schema.Literals(roles)
 const Effort = Schema.Literals(efforts)
 const Model = Schema.Literals(["gpt-6.2-sol", "gpt-6.2-astra"])
 const TaskId = Schema.NonEmptyString
+const defaultEfforts = {
+  redteam: "high",
+  impl: "high",
+  escalate: "xhigh",
+  review: "high",
+  scout: "medium"
+} satisfies Record<typeof Role.Type, typeof Effort.Type>
+const isWriteRole = (role: typeof Role.Type) => role === "impl" || role === "escalate"
 
 const BatchPlanJson = Schema.fromJsonString(Schema.Struct({
   tasks: Schema.Array(Schema.Struct({
@@ -317,23 +325,23 @@ const validateState = Effect.fn("DispatchCodex.validateState")(function*(
 const codexPlan = Effect.fn("DispatchCodex.codexPlan")(function*(options: RunOptions, worktreePath: string) {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
-  const readOnly = options.role === "redteam" || options.role === "review"
+  const readOnly = !isWriteRole(options.role)
   const useAstra = options.role === "redteam" || options.role === "escalate" || (options.role === "review" && options.deep)
   const model: typeof Model.Type = useAstra ? "gpt-6.2-astra" : "gpt-6.2-sol"
-  const effort = options.effort ?? (options.role === "escalate" ? "xhigh" : "high")
+  const effort = options.effort ?? defaultEfforts[options.role]
   const sandbox = readOnly ? "read-only" : "workspace-write"
   const args = [
     "exec", "-m", model, "-c", `model_reasoning_effort="${effort}"`, "-s", sandbox,
     "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-C", worktreePath
   ]
-  if (readOnly) {
+  if (readOnly && options.role !== "scout") {
     const profile = useAstra ? "redteam-astra" : "review-sol"
     const codexHome = yield* Config.string("CODEX_HOME").pipe(Config.withDefault(""))
     if (yield* fs.exists(path.resolve(codexHome || path.join(homedir(), ".codex"), `${profile}.config.toml`))) {
       args.push("-p", profile)
     }
-    args.push("--ephemeral")
   }
+  if (readOnly) args.push("--ephemeral")
   if (options.output !== undefined) args.push("-o", path.resolve(options.output))
   if (options.outputSchema !== undefined) args.push("--output-schema", path.resolve(options.outputSchema))
   args.push("-")
@@ -352,19 +360,21 @@ type DispatchPlan = Effect.Success<ReturnType<typeof codexPlan>> & {
 const readStdin = Stdio.Stdio.use((stdio) => Stream.mkString(Stream.decodeText(stdio.stdin)))
 
 const runCodex = Effect.fn("DispatchCodex.runCodex")(function*(
-  plan: { readonly command: string; readonly args: ReadonlyArray<string> },
-  cwd: string,
+  plan: DispatchPlan,
   prompt: string,
   json?: boolean
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const stdio = yield* Stdio.Stdio
+  const boundary = plan.role === "scout"
+    ? `${taskBoundary}\nRead-only codebase scouting. Return exact file paths, symbols, call chains, and evidence concisely without editing files.`
+    : taskBoundary
   const command = ChildProcess.make(plan.command, plan.args, {
-    cwd,
+    cwd: plan.worktreePath,
     extendEnv: true,
     // Node omits undefined environment values when spawning a child.
     env: { CODEX_API_KEY: undefined, OPENAI_API_KEY: undefined },
-    stdin: Stream.make(`${taskBoundary}\n\n${prompt}`).pipe(Stream.encodeText),
+    stdin: Stream.make(`${boundary}\n\n${prompt}`).pipe(Stream.encodeText),
     stdout: json ? "pipe" : "inherit",
     stderr: "inherit",
     forceKillAfter: "1 second"
@@ -414,7 +424,7 @@ const executePlan = Effect.fn("DispatchCodex.executePlan")(function*(
   // Once published, finalize the attempt even when the child is interrupted.
   return yield* Effect.uninterruptibleMask((restore) => Effect.gen(function*() {
     if (state !== undefined) yield* writeState(state.file, state.running)
-    const outcome = yield* Effect.exit(restore(runCodex(plan, plan.worktreePath, prompt, options.json)))
+    const outcome = yield* Effect.exit(restore(runCodex(plan, prompt, options.json)))
     const failure = Option.getOrUndefined(Exit.findErrorOption(outcome))
     const exitCode = Exit.isSuccess(outcome) ? outcome.value : failure?.exitCode ?? (Exit.hasInterrupts(outcome) ? 130 : 1)
     const report = yield* Effect.result(collectChanges(plan.worktreePath))
@@ -508,7 +518,7 @@ export const runDispatch = Effect.fn("DispatchCodex.run")(function*(options: Run
     return yield* dispatchError("Choose either --prompt or --prompt-file.")
   }
   const identity = yield* repositoryIdentity(cwd)
-  if (options.taskId === undefined || options.role === "redteam" || options.role === "review") {
+  if (options.taskId === undefined || !isWriteRole(options.role)) {
     return yield* dispatchInWorktree(options, cwd, worktree, identity, stdin)
   }
   const file = yield* taskStateFile(options.taskId, identity, options.stateDir)

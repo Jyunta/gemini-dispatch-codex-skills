@@ -36,7 +36,7 @@ The simplifier returns its patch, a concrete before/after explanation, checks an
 Honor the user's explicit review scope. Otherwise, choose the applicable tier and proceed.
 
 - **L1 — Single reviewer (default).** Launch one fresh findings-only **GPT-6.2 Sol** reviewer at **high** via `dispatch-codex run --role review` for ordinary features, bug fixes, tests, docs, clean rebases and small follow-ups. Keep Opus off for L1, including when Sol is unavailable.
-- **L2 — Two-model blind review.** Launch fresh findings-only **GPT-6.2 Astra** at **high** via `dispatch-codex run --role review --deep`, with a separate **Claude Opus 5.5** seat at **high** when available. Use L2 for an explicit deep review or when any of these triggers applies:
+- **L2 — Two-model blind review.** Launch fresh findings-only **GPT-6.2 Astra** at **high** via `dispatch-codex run --role review --deep`, with a separate **Claude Opus 5.5** seat at **high** when available. When Claude Opus 5.5 is already coordinating, run Astra alone with `--deep`. Use L2 for an explicit deep review or when any of these triggers applies:
   - Authentication, permissions, security, privacy, billing, payments, migrations, persisted formats, release or CI pipelines.
   - Broad structural changes across packages or subsystems, or a change to a public API or contract.
   - A severe, disputed or hard-to-diagnose blocker after L1. Escalate before asking the user to settle an inconclusive finding.

@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { once } from "node:events"
 // @effect-diagnostics-next-line nodeBuiltinImport:off
-import { mkdir, mkdtemp, open, readFile, realpath, rm, symlink, watch, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, open, readdir, readFile, realpath, rm, symlink, watch, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { join } from "node:path"
@@ -181,6 +181,27 @@ describe("dispatch-codex", () => {
       expect(args.slice(0, 7)).toEqual(["exec", "-m", model, "-c", `model_reasoning_effort="${effort}"`, "-s", sandbox])
       expect(args.slice(13)).toEqual(profile === undefined ? ["-"] : ["-p", profile, "--ephemeral", "-"])
     }
+  })
+
+  it("dispatches a read-only scout without review profiles, credentials or retry state", async () => {
+    await writeFile(join(fixture.home, "redteam-astra.config.toml"), "")
+    await writeFile(join(fixture.home, "review-sol.config.toml"), "")
+    const output = join(fixture.root, "scout.json")
+    const prompt = "Trace the caller of runDispatch."
+    const result = await runTask("scout", prompt, "--output", output)
+
+    expect(result.exitCode, result.stderr).toBe(0)
+    const invocation = decodeInvocation(await readFile(output, "utf8"))
+    expect(invocation.args.slice(0, 7)).toEqual([
+      "exec", "-m", "gpt-6.2-sol", "-c", 'model_reasoning_effort="medium"', "-s", "read-only"
+    ])
+    expect(invocation.args).toContain("--ephemeral")
+    expect(invocation.args).not.toContain("-p")
+    expect(invocation.credentials).toEqual([false, false])
+    expect(invocation.prompt).toContain(
+      `\nRead-only codebase scouting. Return exact file paths, symbols, call chains, and evidence concisely without editing files.\n\n${prompt}`
+    )
+    await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it("refuses /mnt before Git lookup and permits an explicit override without creating a worktree", async () => {

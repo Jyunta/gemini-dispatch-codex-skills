@@ -10,3 +10,4 @@
 - [x] **T6｜本机双端激活与全链路验收**：安全备份后安装 Antigravity 子集 Skill、Codex 子集 Skill + Profile + 执行者 `AGENTS.md` + 双端护栏 + 更新 `~/.gemini/GEMINI.md`，执行全量测试与真机冒烟验证。
 - [x] **T7｜补充 Gemini 4 Carbon / Hydrogen 分层与实测 `agy models` ID**：替代已下线的 Flash，写入实测模型 ID（`claude-opus-5-5-high`、`gemini-4-carbon-high`、`gemini-4-hydrogen-low/medium`）并同步刷新本地安装。
 - [x] **T8｜纠正 Gemini 4 Carbon / Hydrogen 定位（方案 A）**：Gemini 共享池常规流程仅保留 Neon 主控 + Hydrogen 只读侦察，明确 Carbon 为重型顶配、不进常规流程仅手动按需切换，并同步刷新本地安装。
+- [x] **T9｜Sol 只读侦察与 Opus 5.5 接管**：新增 `scout` 角色（`gpt-6.2-sol`、默认 `medium`、`-s read-only --ephemeral`）。同步更新仓库版本管理的 `gemini/GEMINI.md`（本地 `~/.gemini/GEMINI.md` 符号链接指向该文件）。Gemini 配额耗尽时由 Opus 5.5 接管、Sol 负责侦察，L2 只派 Astra（`--deep`）。
