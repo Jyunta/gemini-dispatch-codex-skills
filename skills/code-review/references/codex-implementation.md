@@ -11,7 +11,7 @@ dispatch-codex run --role impl --effort high --task "$task_id" \
   --worktree "$worktree_dir" --prompt-file "$brief_path"
 ```
 
-`impl` runs GPT-6.2 Sol at `high` by default and accepts `--effort xhigh`. After two failed Sol attempts, pass the unresolved failure and evidence to `dispatch-codex run --role escalate` for GPT-6.2 Astra, using the same `--task` and `--worktree`. Use `dispatch-codex status --task "$task_id"` to inspect the attempt state. Stop at three implementation attempts total. Report the unresolved result when the circuit breaker trips. Reset only with the user's approval for a new retry cycle.
+`impl` runs GPT-6.2 Sol at `medium` by default and accepts `--effort low`, `--effort high`, or `--effort xhigh` (pass `--effort high` or `xhigh` for complex review fixes as shown above). After two failed Sol attempts, pass the unresolved failure and evidence to `dispatch-codex run --role escalate` for GPT-6.2 Astra, using the same `--task` and `--worktree`. Use `dispatch-codex status --task "$task_id"` to inspect the attempt state. Stop at three implementation attempts total. Report the unresolved result when the circuit breaker trips. Reset only with the user's approval for a new retry cycle.
 
 After every run, including failures, use both commands to inspect the actual execution worktree.
 

@@ -22,7 +22,7 @@ Scope each `scout` and `impl` assignment to the target directories and relevant 
 Switch to Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) only in these two emergencies.
 
 1. A single input exceeds 272K tokens or debugging requires audio or video. Hydrogen has flat pricing across its 1M-token context and supports audio and video natively.
-2. ChatGPT Plus hits its 5-hour cap. Use Hydrogen temporarily until the quota resets.
+2. ChatGPT Plus hits its 5-hour or weekly cap. Use Hydrogen temporarily until the quota resets.
 
 Use `batch` for independent assignments in distinct explicit worktrees. Inspect every receipt, including successful siblings of failed tasks. For implementation, verify the reported changes and run the relevant checks in the reported worktree. For review, verify findings against the assigned revision.
 

@@ -32,10 +32,10 @@
 - **Gemini 4 Hydrogen（`gemini-4-hydrogen-low` / `gemini-4-hydrogen-medium`）仅作两个应急开关（平时禁用）**
   1. **单次输入 >272K Token 或音视频排障**。Sol 支持文本和图片，超 272K 涨价，Neon 超 200K 也进入长上下文计费档。Hydrogen 全程 1M 平价（`$1.50/$7.50`），原生支持音视频，遇到这两类输入优先临时切用。
   2. **ChatGPT Plus 撞上 5 小时或周上限**。在 Antigravity 中临时切用 Hydrogen，等额度恢复。
-- **珍贵异构额度（Claude Opus 5.5，`claude-opus-5-5-high`）**仅在 Neon 主控时按需用于以下三类任务。
+- **珍贵异构额度（Claude Opus 5.5，`claude-opus-5-5-high`）**在主控非 Opus 5.5 时（如 Neon 或 Sonnet 5.5 主控）按需用于以下三类任务：
   1. **L2 高风险异构双脑盲审**：冻结同一份 commit/diff 后，Astra 与 Opus 5.5 各自独立交卷，严禁把第一席结论提前写入共享文档或 `/swarm` `main` 频道；
   2. **L3 UI/前端视觉设计打分**：结合 `frontend-ui-validation` 截图证据按 `design` 准则评分；
-  3. **架构分歧 Oracle 裁决**：仅当 Neon 与 Astra 出现实质分歧时请 Opus 5.5 只读裁决。
+  3. **架构分歧 Oracle 裁决**：仅当主控（Neon / Sonnet 5.5）与 Astra 出现实质分歧时请 Opus 5.5 只读裁决。
   - 调度方式优先用显式只读 `/swarm` worker（模型 `claude-opus-5-5-high`）或手动切模；若用 `agy -p`，必须使用 `agy --model claude-opus-5-5-high --mode plan --sandbox --print-timeout 180s -p "..."` 并在 prompt 首行覆写角色边界（纯只读评审官，忽略 `GEMINI.md` 派单规则，禁止调 shell 写操作或 `codex`）。若 Opus 超时或耗尽额度，立即降级并在最终报告明示 `Opus 5.5 缺席（原因）`，严禁无限等待或静默换模冒充。
 
 ## 4. 验收、双端护栏与 Git 纪律
