@@ -7,7 +7,7 @@ description: 'Use when orchestrating GPT-6.2 Sol or Astra via dispatch-codex for
 
 Verify ChatGPT sign-in with `codex login status` before dispatching. Use `dispatch-codex --help` and each subcommand's help for options. Start with `run --dry-run` when routing, worktree, or retry state needs checking.
 
-Preserve Codex Sol and Astra quota by keeping large read-only scouting on Antigravity's `research` with Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) and using Gemini 4 Carbon (`gemini-4-carbon-high`) for routine lightweight coordination.
+Use Gemini 4 Neon (`gemini-4-neon-high`) for orchestration and Codex Sol for routine implementation. Run large read-only scouting through Antigravity's `research` with Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) to conserve the shared Gemini Pro quota. Keep Gemini 4 Carbon (`gemini-4-carbon-high`), the heaviest reasoning model, out of routine workflows. Reserve it for rare, extra-complex top-level architecture when the user manually switches to it.
 
 Choose the role for the assignment.
 

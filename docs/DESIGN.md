@@ -4,11 +4,11 @@
 
 本分支 `personal/agy-codex-orchestration` 在保留 `main` 跟踪上游的同时，面向 **WSL2 + Antigravity (`agy` 主控) + ChatGPT 订阅版 Codex (`codex-cli 0.172.0`：GPT-6.2 Sol / Astra)** 落地完整的单人工程闭环，并纳入 GPT-6.2 Astra 红队审查后的全部修正项。
 
-Antigravity 的 Flash 已下线，原有任务由 Gemini 4 Hydrogen 和 Gemini 4 Carbon 接替。模型分工如下，可用 `agy models` 复核 ID。
+Antigravity 的 Flash 已下线，由 Gemini 4 Hydrogen 接替。常规流程由 Neon 主控、Hydrogen 负责大规模只读侦察，代码实现继续交给 Codex Sol。可用 `agy models` 复核模型 ID。
 
-- **Gemini 4 Neon**（`gemini-4-neon-high`）负责架构设计、复杂方案与关键验证。
-- **Gemini 4 Carbon**（`gemini-4-carbon-high`、`gemini-4-carbon-medium`）负责日常轻量与中等复杂度的编排、小改动，并在 Neon 不可用时接替。
-- **Gemini 4 Hydrogen**（`gemini-4-hydrogen-low`、`gemini-4-hydrogen-medium`、`gemini-4-hydrogen-high`）负责代码库摸排、日志分析、并行探索等高吞吐只读任务。
+- **Gemini 4 Neon**（`gemini-4-neon-high`）是兼顾速度与推理的主控模型，负责 `docs/DESIGN.md` 的架构设计、`dispatch-codex` 派单协调与验证。
+- **Gemini 4 Hydrogen**（`gemini-4-hydrogen-low`、`gemini-4-hydrogen-medium`、`gemini-4-hydrogen-high`）是最轻、最快的一档，通过 Antigravity 的 `research` 执行代码库摸排、日志分析等大规模只读任务，节省共享的 Gemini Pro 配额。
+- **Gemini 4 Carbon**（`gemini-4-carbon-high`）是最重的深度推理旗舰，会快速消耗同一 Gemini Pro 配额池。Carbon 不进入常规流程，仅在少数特别复杂的顶层架构任务中由用户手动切换启用。
 - **Claude Opus 5.5**（`claude-opus-5-5-high`）用于指定的 L2 异构盲审、L3 UI 评分，以及 Neon 与 Astra 意见分歧时的 Oracle 仲裁。
 
 核心目标：
