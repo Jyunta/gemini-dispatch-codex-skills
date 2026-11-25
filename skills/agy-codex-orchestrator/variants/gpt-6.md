@@ -7,15 +7,22 @@ description: 'Use when orchestrating GPT-6.2 Sol or Astra via dispatch-codex for
 
 Verify ChatGPT sign-in with `codex login status` before dispatching. Use `dispatch-codex --help` and each subcommand's help for options. Start with `run --dry-run` when routing, worktree, or retry state needs checking.
 
-Use Gemini 4 Neon (`gemini-4-neon-high`) for orchestration and Codex Sol for routine implementation. Run large read-only scouting through Antigravity's `research` with Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) to conserve the shared Gemini Pro quota. Keep Gemini 4 Carbon (`gemini-4-carbon-high`), the heaviest reasoning model, out of routine workflows. Reserve it for rare, extra-complex top-level architecture when the user manually switches to it.
+Use Gemini 4 Neon (`gemini-4-neon-high`) to coordinate GPT-6.2 Sol and GPT-6.2 Astra. Switch coordination to Claude Opus 5.5 or Sonnet 5.5 when the Gemini quota is exhausted. Reserve Gemini 4 Carbon (`gemini-4-carbon-high`) for manual selection by the user.
 
 Choose the role for the assignment.
 
 - Use `redteam` to challenge a design or implementation with evidence. Ask for findings and verification limits.
 - Use `review` for a findings-only code review. Use `--deep` for a harder review that needs Astra.
-- Use `scout` for read-only codebase exploration (GPT-6.2 Sol at `medium` by default, `--ephemeral`) when the Gemini quota pool is exhausted and Claude Opus/Sonnet 5.5 is coordinating, so Opus stays focused on architecture and decisions.
-- Use `impl` for a bounded implementation with a stable task ID. Give the worker the exact scope, allowed files, expected behavior, and checks.
+- Use `scout` for routine read-only codebase exploration under both Neon and Claude coordinators. It uses GPT-6.2 Sol at `medium` by default with `--ephemeral`. Use `--effort low` for simple lookups.
+- Use `impl` for a bounded implementation with a stable task ID. Sol defaults to `medium`. Pass `--effort low` for trivial docs or scaffolding, or `--effort high` or `--effort xhigh` for complex logic or refactors. Specify the expected behavior and checks.
 - Use `escalate` with the same task ID when the dispatcher blocks another Sol attempt. Include the unresolved failure and available evidence.
+
+Scope each `scout` and `impl` assignment to the target directories and relevant files to stay well under Sol's 272K-token long-context threshold.
+
+Switch to Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) only in these two emergencies.
+
+1. A single input exceeds 272K tokens or debugging requires audio or video. Hydrogen has flat pricing across its 1M-token context and supports audio and video natively.
+2. ChatGPT Plus hits its 5-hour cap. Use Hydrogen temporarily until the quota resets.
 
 Use `batch` for independent assignments in distinct explicit worktrees. Inspect every receipt, including successful siblings of failed tasks. For implementation, verify the reported changes and run the relevant checks in the reported worktree. For review, verify findings against the assigned revision.
 

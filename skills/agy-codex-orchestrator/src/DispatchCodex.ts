@@ -22,14 +22,14 @@ import { homedir } from "node:os"
 import { checkedText, platformErrorExitCode } from "../../../packages/effect-cli/CheckedProcess.ts"
 
 export const roles = ["redteam", "impl", "escalate", "review", "scout"] as const
-export const efforts = ["medium", "high", "xhigh"] as const
+export const efforts = ["low", "medium", "high", "xhigh"] as const
 const Role = Schema.Literals(roles)
 const Effort = Schema.Literals(efforts)
 const Model = Schema.Literals(["gpt-6.2-sol", "gpt-6.2-astra"])
 const TaskId = Schema.NonEmptyString
 const defaultEfforts = {
   redteam: "high",
-  impl: "high",
+  impl: "medium",
   escalate: "xhigh",
   review: "high",
   scout: "medium"
@@ -367,7 +367,7 @@ const runCodex = Effect.fn("DispatchCodex.runCodex")(function*(
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const stdio = yield* Stdio.Stdio
   const boundary = plan.role === "scout"
-    ? `${taskBoundary}\nRead-only codebase scouting. Return exact file paths, symbols, call chains, and evidence concisely without editing files.`
+    ? `${taskBoundary}\nRead-only codebase scouting. Stay within the targeted directories/files to keep context well under 272K tokens; return exact file paths, symbols, call chains, and evidence concisely without editing files.`
     : taskBoundary
   const command = ChildProcess.make(plan.command, plan.args, {
     cwd: plan.worktreePath,

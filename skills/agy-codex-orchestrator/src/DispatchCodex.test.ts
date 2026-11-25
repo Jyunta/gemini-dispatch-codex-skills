@@ -171,7 +171,7 @@ describe("dispatch-codex", () => {
     const cases = [
       ["redteam", "gpt-6.2-astra", "high", "read-only", "redteam-astra"],
       ["review", "gpt-6.2-sol", "high", "read-only", "review-sol"],
-      ["impl", "gpt-6.2-sol", "high", "workspace-write", undefined],
+      ["impl", "gpt-6.2-sol", "medium", "workspace-write", undefined],
       ["escalate", "gpt-6.2-astra", "xhigh", "workspace-write", undefined]
     ] as const
     for (const [role, model, effort, sandbox, profile] of cases) {
@@ -181,6 +181,12 @@ describe("dispatch-codex", () => {
       expect(args.slice(0, 7)).toEqual(["exec", "-m", model, "-c", `model_reasoning_effort="${effort}"`, "-s", sandbox])
       expect(args.slice(13)).toEqual(profile === undefined ? ["-"] : ["-p", profile, "--ephemeral", "-"])
     }
+  })
+
+  it("passes an explicit low effort through the CLI to the Codex command", async () => {
+    const dry = await dispatch(["run", ...runFlags(), "--role", "impl", "--effort", "low", "--dry-run"])
+    expect(dry.exitCode, dry.stderr).toBe(0)
+    expect(decodeReceipt(dry.stdout).args).toContain('model_reasoning_effort="low"')
   })
 
   it("dispatches a read-only scout without review profiles, credentials or retry state", async () => {
@@ -199,7 +205,7 @@ describe("dispatch-codex", () => {
     expect(invocation.args).not.toContain("-p")
     expect(invocation.credentials).toEqual([false, false])
     expect(invocation.prompt).toContain(
-      `\nRead-only codebase scouting. Return exact file paths, symbols, call chains, and evidence concisely without editing files.\n\n${prompt}`
+      `\nRead-only codebase scouting. Stay within the targeted directories/files to keep context well under 272K tokens; return exact file paths, symbols, call chains, and evidence concisely without editing files.\n\n${prompt}`
     )
     await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
   })

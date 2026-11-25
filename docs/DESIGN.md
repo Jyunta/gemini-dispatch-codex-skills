@@ -4,14 +4,16 @@
 
 本分支 `personal/agy-codex-orchestration` 在保留 `main` 跟踪上游的同时，面向 **WSL2 + Antigravity (`agy` 主控) + ChatGPT 订阅版 Codex (`codex-cli 0.172.0`：GPT-6.2 Sol / Astra)** 落地完整的单人工程闭环，并纳入 GPT-6.2 Astra 红队审查后的全部修正项。
 
-Antigravity 的 Flash 已下线，由 Gemini 4 Hydrogen 接替。常规流程由 Neon 主控、Hydrogen 负责大规模只读侦察，代码实现继续交给 Codex Sol。可用 `agy models` 复核模型 ID。
+常规流程由 Neon 主控，配合 Codex Sol 与 Astra。可用 `agy models` 复核 Antigravity 模型 ID。
 
 - **Gemini 4 Neon**（`gemini-4-neon-high`）是兼顾速度与推理的主控模型，负责 `docs/DESIGN.md` 的架构设计、`dispatch-codex` 派单协调与验证。
-- **Gemini 4 Hydrogen**（`gemini-4-hydrogen-low`、`gemini-4-hydrogen-medium`、`gemini-4-hydrogen-high`）是最轻、最快的一档，通过 Antigravity 的 `research` 执行代码库摸排、日志分析等大规模只读任务，节省共享的 Gemini Pro 配额。
-- **Gemini 4 Carbon**（`gemini-4-carbon-high`）是最重的深度推理旗舰，会快速消耗同一 Gemini Pro 配额池。Carbon 不进入常规流程，仅在少数特别复杂的顶层架构任务中由用户手动切换启用。
+- **GPT-6.2 Sol** 负责日常只读侦察和代码实现，`scout` 与 `impl` 默认均为 `medium`。两类任务都应限定目标目录和关联文件，使上下文远低于 272K Token。
+- **GPT-6.2 Astra** 负责红队排雷、L2 深度审查与 Sol 实现受阻后的攻坚。
+- **Gemini 4 Hydrogen**（`gemini-4-hydrogen-low`、`gemini-4-hydrogen-medium`）仅在两种情况下临时启用。单次输入超过 272K Token 或需要音视频排障时，使用其 1M 平价上下文和原生音视频支持。ChatGPT Plus 达到 5 小时或周上限时，用 Hydrogen 过渡到额度恢复。
+- **Gemini 4 Carbon**（`gemini-4-carbon-high`）仅由用户按需手动切换。
 - **Claude Opus 5.5**（`claude-opus-5-5-high`）用于指定的 L2 异构盲审、L3 UI 评分，以及 Neon 与 Astra 意见分歧时的 Oracle 仲裁。
 
-Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调。用 `dispatch-codex run --role scout` 将代码库摸排、调用链追踪和日志检索交给 Sol，主控依据侦察结果做架构决策和验收。Opus 5.5 担任主控时，L2 只派发 `dispatch-codex run --role review --deep` 给 Astra，由主控复核。
+Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调。Neon 与 Claude 主控均用 `dispatch-codex run --role scout` 将代码库摸排、调用链追踪和日志检索交给 Sol，主控依据侦察结果做架构决策和验收。Opus 5.5 担任主控时，L2 只派发 `dispatch-codex run --role review --deep` 给 Astra，由主控复核。
 
 核心目标：
 1. **P0 顺手修复**：修补模型匹配漂移（Fable 5.2 / Sonnet 5.5 / Haiku 5.5）、清理退役 Skill 引用与 `TOOLING-CHANGES.md` 本机路径、`AGENTS.md` 压回 14 KB 预算内零警告、修复 `inventory.mjs` 与 `proof-publication.mjs` 细节缺陷。
@@ -49,10 +51,11 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
 - **角色映射（均强清 `CODEX_API_KEY` / `OPENAI_API_KEY` 并锁定 `model_provider="openai"` + `forced_login_method="chatgpt"`）**：
   - `redteam`：`gpt-6.2-astra`、`high`、`-s read-only --ephemeral`（若已安装 `redteam-astra.config.toml` 则附带 `-p redteam-astra`）
   - `review`：默认 `gpt-6.2-sol`（`--deep` 切 `gpt-6.2-astra`）、`high`、`-s read-only --ephemeral`（已安装则附带 `-p review-sol` / `-p redteam-astra`）
-  - `impl`：`gpt-6.2-sol`、默认 `high`、`-s workspace-write`
+  - `impl`：`gpt-6.2-sol`、默认 `medium`、`-s workspace-write`。简单脚手架或文档用 `--effort low`，复杂逻辑或重构用 `--effort high` 或 `--effort xhigh`。
   - `escalate`：`gpt-6.2-astra`、默认 `xhigh`、`-s workspace-write`
-  - `scout`：`gpt-6.2-sol`、默认 `medium`、`-s read-only --ephemeral`，跳过审查 Profile 和写任务重试锁。
-  - 所有角色均可用 `--effort <medium|high|xhigh>` 覆盖默认值。
+  - `scout`：`gpt-6.2-sol`、默认 `medium`、`-s read-only --ephemeral`，跳过审查 Profile 和写任务重试锁。Neon 与 Claude 主控均默认走此入口，简单查找可用 `--effort low`。
+  - 所有角色均可用 `--effort <low|medium|high|xhigh>` 覆盖默认值。
+- **上下文与应急切换**。派发 `scout` 或 `impl` 时限定目标目录和关联文件，使上下文远低于 272K Token。仅在单次输入超过 272K Token 或需要音视频排障，或 ChatGPT Plus 达到 5 小时或周上限时，才在 Antigravity 临时切用 Hydrogen。
 - **Prompt 边界注入**：统一在发送给 Codex 的 prompt 顶部附加最高优先级任务边界声明，压制第三方仓库 `AGENTS.md` 中的无关编排规则。
 - **原子状态与三轮熔断**：
   - 默认状态目录：`~/.local/state/agy-dispatch/<repo-hash>/<task-id>.json`（可用 `--state-dir` 覆盖便于测试）。

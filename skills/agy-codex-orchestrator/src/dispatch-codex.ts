@@ -54,7 +54,7 @@ const run = Command.make("run", {
   ...dispatchFlags,
   role: Flag.choice("role", roles).pipe(Flag.withDescription("Routing role")),
   effort: Flag.choice("effort", efforts).pipe(
-    Flag.withDescription("Reasoning effort defaults to medium for scout, high for redteam/review/impl, and xhigh for escalate"),
+    Flag.withDescription("Reasoning effort defaults to medium for scout/impl, high for redteam/review, and xhigh for escalate"),
     Flag.optional, Flag.map(Option.getOrUndefined)
   ),
   deep: Flag.boolean("deep").pipe(Flag.withDescription("Route a review to Astra")),
