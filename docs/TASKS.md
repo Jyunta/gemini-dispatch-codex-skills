@@ -8,3 +8,4 @@
 - [x] **T4｜适配 `code-review`（L1/L2/L3 + Opus 盲审与超时降级）与 `grilling`（默认 `docs/DESIGN.md`）**：更新 `BASE.md`、全部 `variants/` 与引用文档，确保 `bun run lint:skills` 零错零警告。
 - [x] **T5｜Phase 2 双端确定性安全护栏**：实现 `packages/guardrails/agy-pretool-guard.ts`（含 Vitest 测试）、`hooks.template.json`、`codex-guardrails.rules`（经 `codex execpolicy check` 验证）。
 - [x] **T6｜本机双端激活与全链路验收**：安全备份后安装 Antigravity 子集 Skill、Codex 子集 Skill + Profile + 执行者 `AGENTS.md` + 双端护栏 + 更新 `~/.gemini/GEMINI.md`，执行全量测试与真机冒烟验证。
+- [x] **T7｜补充 Gemini 4 Carbon / Hydrogen 分层与实测 `agy models` ID**：替代已下线的 Flash，写入实测模型 ID（`claude-opus-5-5-high`、`gemini-4-carbon-high`、`gemini-4-hydrogen-low/medium`）并同步刷新本地安装。
