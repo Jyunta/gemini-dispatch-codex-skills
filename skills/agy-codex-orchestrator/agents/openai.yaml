@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrate Codex"
+  short_description: "Dispatch bounded Codex tasks with verified worktree receipts"
+  default_prompt: "Use $agy-codex-orchestrator to dispatch and verify this Codex task."

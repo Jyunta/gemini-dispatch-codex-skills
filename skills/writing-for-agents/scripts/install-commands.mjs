@@ -12,6 +12,7 @@ export const commandCatalog = [
   ["skill-audit-layout", "frontend-ui-validation", "audit-layout.mjs"],
   ["skill-collect-context", "grilling", "collect-context.mjs"],
   ["codex-handoff-tmux", "handoff", "codex-handoff-tmux"],
+  ["dispatch-codex", "agy-codex-orchestrator", "dispatch-codex"],
   ["detect-handoff-surface", "handoff", "detect-handoff-surface", ["bash"]],
   ["github-verify-rendered-proof", "pr-proof-pack", "github-verify-rendered-proof", ["sh"]],
   ["pr-net-diff", "pr-proof-pack", "pr-net-diff"],
