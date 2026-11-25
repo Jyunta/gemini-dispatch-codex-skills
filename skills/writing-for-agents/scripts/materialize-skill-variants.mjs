@@ -32,7 +32,7 @@ export const profiles = [
     id: "claude-fable-5.1",
     family: "anthropic-fable",
     version: [5, 1],
-    matches: /^(?:(?:anthropic\/)?claude-fable-5(?:(?:[.-]1)(?:\[1m\])?|\[1m\])(?:-\d{8})?|fable(?:\[1m\])?)$/i,
+    matches: /^(?:(?:anthropic\/)?claude-fable-5(?:(?:[.-][12](?:\[1m\])?|\[1m\])(?:-\d{8})?|[.-]2-\d{8}\[1m\])|fable(?:\[1m\])?)$/i,
   },
   {
     id: "claude-opus-5.5",
@@ -52,6 +52,8 @@ function modelFamily(model) {
   const normalized = model.slice(model.lastIndexOf("/") + 1).toLowerCase();
   if (/^(?:(?:anthropic\/)?claude-)?fable(?:[-.]\d|\[)/.test(normalized)) return "anthropic-fable";
   if (/^(?:claude-)?opus[-.]\d/.test(normalized)) return "anthropic-opus";
+  if (normalized === "sonnet" || /^(?:claude-)?sonnet[-.]\d/.test(normalized)) return "anthropic-sonnet";
+  if (normalized === "haiku" || /^(?:claude-)?haiku[-.]\d/.test(normalized)) return "anthropic-haiku";
   if (/^(?:openai\/)?gpt-\d/.test(normalized)) return "openai-gpt";
   return undefined;
 }
@@ -64,7 +66,7 @@ function modelVersion(model, family) {
     return match === null ? undefined : [Number(match[1]), Number(match[2] ?? 0)];
   }
   if (normalized === "fable[1m]" || normalized === "claude-fable-5[1m]") return [5, 1];
-  const match = normalized.match(/^(?:claude-)?(?:fable|opus)-(\d+)(?:[.-](\d+))?/);
+  const match = normalized.match(/^(?:claude-)?(?:fable|opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?/);
   return match === null ? undefined : [Number(match[1]), Number(match[2] ?? 0)];
 }
 
@@ -79,14 +81,15 @@ export function resolveProfile(model) {
   if (family === undefined) {
     throw new Error(`unsupported model family for ${model}`);
   }
+  const profileFamily = family === "anthropic-sonnet" || family === "anthropic-haiku" ? "anthropic-opus" : family;
   const familyProfiles = profiles
-    .filter((profile) => profile.family === family)
+    .filter((profile) => profile.family === profileFamily)
     .sort((left, right) => compareVersions(left.version, right.version));
   const earliest = familyProfiles[0];
   if (earliest === undefined) {
     throw new Error(`no skill profile is available for model family ${family}`);
   }
-  const requestedVersion = modelVersion(model, family);
+  const requestedVersion = /^(?:sonnet|haiku)$/i.test(unqualifiedModel) ? earliest.version : modelVersion(model, family);
   if (exact === undefined && (requestedVersion === undefined || compareVersions(requestedVersion, earliest.version) < 0)) {
     throw new Error(`model ${model} is older than the earliest supported ${family} profile (${earliest.id}); choose a supported model before installing skills`);
   }

@@ -7,8 +7,26 @@ import test from "node:test";
 
 import {
   reclaimAbandonedLock,
+  resolveProfile,
   withOutputLock,
 } from "./materialize-skill-variants.mjs";
+
+test("uses the Fable 5.1 profile as an exact match for Fable 5.2", () => {
+  for (const model of ["claude-fable-5-2", "claude-fable-5.2[1m]-20261125", "claude-fable-5-2-20261125[1m]"]) {
+    const { exact, profile } = resolveProfile(model);
+    assert.deepEqual({ exact, profile: profile.id }, { exact: true, profile: "claude-fable-5.1" }, model);
+  }
+});
+
+test("uses the Opus 5.5 profile as a fallback for Sonnet and Haiku", () => {
+  for (const tier of ["sonnet", "haiku"]) {
+    for (const model of [tier, `claude-${tier}-5-5`, `claude-${tier}-5.5`, `claude-${tier}-5-6`]) {
+      const { exact, profile } = resolveProfile(model);
+      assert.deepEqual({ exact, profile: profile.id }, { exact: false, profile: "claude-opus-5.5" }, model);
+    }
+    assert.throws(() => resolveProfile(`claude-${tier}-5-4`), /older than the earliest supported/);
+  }
+});
 
 function fixture(t) {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "skill-variants-"));

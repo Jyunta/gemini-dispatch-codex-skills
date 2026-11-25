@@ -32,12 +32,12 @@ export function remainingAssets(receipt, current) {
   return receipt.assets.filter(asset => current.body.includes(asset.reference));
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     pr: { type: "string" }, body: { type: "string" }, asset: { type: "string", multiple: true },
     state: { type: "string" }, help: { type: "boolean" }
   } });
-  if (values.help) console.log("bun proof-publication.mjs prepare --pr URL --body DRAFT.md [--asset LOCAL-REFERENCE] --state NEW-DIRECTORY\nbun proof-publication.mjs check --state DIRECTORY\nbun proof-publication.mjs observe --state DIRECTORY\nRead-only GitHub bookkeeping. Use native gh --attach only after caller authorization and a fresh check; observe saves readback and pending references, never retries or overwrites the PR.");
+  if (values.help) console.log("proof-publication prepare --pr URL --body DRAFT.md [--asset LOCAL-REFERENCE] --state NEW-DIRECTORY\nproof-publication check --state DIRECTORY\nproof-publication observe --state DIRECTORY\nRead-only GitHub bookkeeping. Use native gh --attach only after caller authorization and a fresh check; observe saves readback and pending references, never retries or overwrites the PR.");
   else {
     if (!values.state) throw new Error("Supply --state");
     const state = path.resolve(values.state);

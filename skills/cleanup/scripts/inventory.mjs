@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
 export function inventory(root, composeProject) {
@@ -29,7 +30,7 @@ export function inventory(root, composeProject) {
     limits: ["No deletion commands are produced or run.", "No remote refs are refreshed; local ancestry cannot prove current PR merge status.", "Nested process cwd, watchers, mobile devices, shared caches, and task-created temp paths require their native owner tools.", "Unknown ownership must be resolved, never treated as approval to delete."] };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   const { values } = parseArgs({ options: { root: { type: "string", default: process.cwd() }, "compose-project": { type: "string" }, output: { type: "string" }, help: { type: "boolean" } } });
   if (values.help) console.log("node inventory.mjs [--root REPO] [--compose-project NAME] [--output NEW.json]\nRead-only ownership evidence. Keep inventories private. Nothing is marked safe to delete.");
   else {
