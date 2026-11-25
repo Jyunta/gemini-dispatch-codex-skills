@@ -286,14 +286,16 @@ function noticeOnce({ notice, outputRoot, sessionId }) {
   return notice;
 }
 
-export function planSkillVariants({ sourceRoot, model, requireExact = false, skillNames }) {
+export function planSkillVariants({ sourceRoot, model, requireExact = false, skillNames, onlySkillNames }) {
+  if (skillNames !== undefined && onlySkillNames !== undefined) throw new Error("cannot combine --skill and --only");
+  const selectedSkillNames = skillNames ?? onlySkillNames;
   const resolvedSource = fs.realpathSync(sourceRoot);
   const { exact, profile } = resolveProfile(model);
   const discovered = discoverSkills(resolvedSource);
-  if (skillNames !== undefined && (skillNames.length === 0 || skillNames.some((name) => !discovered.some((skill) => skill.name === name)))) {
+  if (selectedSkillNames !== undefined && (selectedSkillNames.length === 0 || selectedSkillNames.some((name) => !discovered.some((skill) => skill.name === name)))) {
     throw new Error("selected skills must be a nonempty list of known skill names");
   }
-  const skills = discovered.filter((skill) => skillNames === undefined || skillNames.includes(skill.name))
+  const skills = discovered.filter((skill) => selectedSkillNames === undefined || selectedSkillNames.includes(skill.name))
     .map((skill) => ({ ...skill, selection: selectVariant(skill, profile) }));
   if (requireExact && !exact) {
     throw new Error(`complete exact skill coverage is required for ${model}`);
@@ -310,8 +312,8 @@ export function assertTargetedView(outputRoot, sourceRoot, profile, skillNames) 
   }
 }
 
-export function materializeSkillVariants({ sourceRoot, outputRoot, model, previousSourceRoot, sessionId, requireExact = false, skillNames }) {
-  const { exact, profile, skills, sourceRoot: resolvedSource } = planSkillVariants({ sourceRoot, model, requireExact, skillNames });
+export function materializeSkillVariants({ sourceRoot, outputRoot, model, previousSourceRoot, sessionId, requireExact = false, skillNames, onlySkillNames }) {
+  const { exact, profile, skills, sourceRoot: resolvedSource } = planSkillVariants({ sourceRoot, model, requireExact, skillNames, onlySkillNames });
   const resolvedOutput = path.resolve(outputRoot);
   withOutputLock(resolvedOutput, () => {
     assertManagedOutput(resolvedOutput, resolvedSource, previousSourceRoot);
@@ -357,9 +359,14 @@ function parseArguments(argv) {
     const key = argv[index];
     const value = argv[index + 1];
     if (!key?.startsWith("--") || value === undefined) {
-      throw new Error("expected --source, --output, and optional --model or --session arguments");
+      throw new Error("expected an option and value, such as --source <path>, --output <path>, --model <model>, or --only <name>");
     }
-    values[key.slice(2)] = value;
+    const name = key.slice(2);
+    if (name === "skill" || name === "only") {
+      (values[name] ??= []).push(value);
+    } else {
+      values[name] = value;
+    }
   }
   return values;
 }
@@ -375,6 +382,8 @@ function main() {
     model: args.model,
     previousSourceRoot: args["previous-source"],
     sessionId: args.session,
+    skillNames: args.skill,
+    onlySkillNames: args.only,
   });
   if (args.format === "json") process.stdout.write(`${JSON.stringify(result)}\n`);
   else if (result.notice !== undefined) process.stdout.write(`${result.notice}\n`);

@@ -92,13 +92,13 @@ function inspectLinks(skillsDirectory, viewRoot, skills, sourceRoot, previousSou
   return { links, retired };
 }
 
-export function installSkills({ harness, model, root, sourceRoot = sourceDefault, previousSourceRoot, requireExact = false, sessionId, dryRun = false, skillNames, binDir = path.join(os.homedir(), ".local", "bin") }) {
+export function installSkills({ harness, model, root, sourceRoot = sourceDefault, previousSourceRoot, requireExact = false, sessionId, dryRun = false, skillNames, onlySkillNames, binDir = path.join(os.homedir(), ".local", "bin") }) {
   const defaultRoot = harnessDirectory(harness);
   const harnessRoot = path.resolve(root ?? defaultRoot);
   // Gemini CLI's aliases and Cursor's Auto router install the model-neutral shared prompts.
   const neutralAliases = { gemini: ["auto", "pro", "flash", "flash-lite"], cursor: ["auto"] }[harness] ?? [];
   const profileModel = neutralAliases.includes(model.toLowerCase()) ? "gemini" : model;
-  const plan = planSkillVariants({ sourceRoot, model: profileModel, requireExact, skillNames });
+  const plan = planSkillVariants({ sourceRoot, model: profileModel, requireExact, skillNames, onlySkillNames });
   const family = plan.profile.family;
   const compatible = {
     codex: family === "openai-gpt",
@@ -118,7 +118,10 @@ export function installSkills({ harness, model, root, sourceRoot = sourceDefault
   };
   const preview = preflight();
   const globalRule = harness === "cursor" ? cursorRulePath(harnessRoot) : undefined;
-  const commandOptions = { binDir, sourceRoot: plan.sourceRoot, previousSourceRoot, skills: plan.skills, skillNames };
+  const commandOptions = {
+    binDir, sourceRoot: plan.sourceRoot, previousSourceRoot, skills: plan.skills, skillNames,
+    preserveOtherCommands: onlySkillNames !== undefined,
+  };
   if (dryRun) {
     const commandPreview = planCommands(commandOptions);
     return {
@@ -152,7 +155,7 @@ export function installSkills({ harness, model, root, sourceRoot = sourceDefault
         changed.push({ destination, original, removed: true });
       }
       const result = materializeSkillVariants({
-        sourceRoot: plan.sourceRoot, outputRoot: viewRoot, model: profileModel, previousSourceRoot, requireExact, skillNames,
+        sourceRoot: plan.sourceRoot, outputRoot: viewRoot, model: profileModel, previousSourceRoot, requireExact, skillNames, onlySkillNames,
         sessionId: sessionId ?? process.env.CODEX_THREAD_ID ?? process.env.CLAUDE_SESSION_ID,
       });
       return { ...result, model, harness, root: harnessRoot, viewRoot, globalRule, linksChanged: links.length, linksRetired: retired.length };
@@ -175,6 +178,7 @@ export function runInstaller() {
     previousSource: Flag.string("previous-source").pipe(Flag.optional),
     session: Flag.string("session").pipe(Flag.optional),
     skills: Flag.string("skill").pipe(Flag.atLeast(0), Flag.withDescription("Update only these skills; repeat for multiple names. Requires the same installed profile and source.")),
+    onlySkills: Flag.string("only").pipe(Flag.atLeast(0), Flag.withDescription("Install a managed view containing only these skills. Repeat for multiple names. Incompatible with --skill.")),
     requireExact: Flag.boolean("require-exact").pipe(Flag.withDescription("Refuse fallback if the model or any skill lacks an exact variant")),
     dryRun: Flag.boolean("dry-run"),
     json: Flag.boolean("json"),
@@ -185,6 +189,7 @@ export function runInstaller() {
       binDir: Option.getOrUndefined(options.binDir),
       sessionId: Option.getOrUndefined(options.session), requireExact: options.requireExact, dryRun: options.dryRun,
       skillNames: options.skills.length === 0 ? undefined : options.skills,
+      onlySkillNames: options.onlySkills.length === 0 ? undefined : options.onlySkills,
     }));
     if (options.json) return yield* Console.log(JSON.stringify(result));
     yield* Console.log(`${options.dryRun ? "Would install" : "Installed"} ${result.skillCount} skills for ${result.harness}: ${result.profile}\nRoot: ${result.root}`);

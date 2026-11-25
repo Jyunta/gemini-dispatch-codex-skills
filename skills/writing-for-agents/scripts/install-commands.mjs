@@ -84,24 +84,27 @@ function discoverCommands(skills) {
   return commands;
 }
 
-export function planCommands({ binDir, sourceRoot, skills, skillNames, previousSourceRoot }) {
+export function planCommands({ binDir, sourceRoot, skills, skillNames, previousSourceRoot, preserveOtherCommands = false }) {
   const directory = path.resolve(binDir);
   assertDirectory(directory);
   const outputRoot = path.join(directory, OWNER);
   const previous = readManifest(outputRoot);
   const approvedPrevious = previousSourceRoot === undefined ? undefined
     : fs.existsSync(previousSourceRoot) ? fs.realpathSync(previousSourceRoot) : path.resolve(previousSourceRoot);
-  if (previous !== undefined && previous.sourceRoot !== sourceRoot && (skillNames !== undefined || previous.sourceRoot !== approvedPrevious)) {
+  const selectedSkillNames = preserveOtherCommands ? skills.map(skill => skill.name) : skillNames;
+  if (previous !== undefined && previous.sourceRoot !== sourceRoot && (selectedSkillNames !== undefined || previous.sourceRoot !== approvedPrevious)) {
     throw new Error(`commands owned by another source: ${previous.sourceRoot}; use a full install with --previous-source to transfer ownership`);
   }
-  const commands = skillNames === undefined ? [] : (previous?.commands ?? []).filter(command => !skillNames.includes(command.skill));
-  commands.push(...discoverCommands(skills));
+  const selectedCommands = discoverCommands(skills);
+  const commands = selectedSkillNames === undefined ? [] : (previous?.commands ?? []).filter(command => !selectedSkillNames.includes(command.skill));
+  commands.push(...selectedCommands);
   commands.sort((left, right) => left.name.localeCompare(right.name, "en"));
   const names = new Set(commands.map(command => command.name));
   if (names.size !== commands.length) throw new Error("duplicate command aliases in catalog");
   const links = [];
   const retired = [];
-  for (const command of commands) {
+  // A subset owns only its selected aliases in the shared bin directory.
+  for (const command of preserveOtherCommands ? selectedCommands : commands) {
     const destination = path.join(directory, command.name);
     const expected = path.join(outputRoot, command.name);
     const existing = fs.lstatSync(destination, { throwIfNoEntry: false });

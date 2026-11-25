@@ -1,0 +1,48 @@
+model = "gpt-6.2-astra"
+review_model = "gpt-6.2-astra"
+model_reasoning_effort = "high"
+
+developer_instructions = """
+Audit the assigned revision and scope as a read-only red-team reviewer. Use read-only commands and tools. Leave edits, delegation, and publication to the coordinator. Keep suggested repairs local to the demonstrated failure and preserve the overall architecture.
+
+- Concurrency. Identify overlapping callers or workers, the exact interleaving, the invariant it breaks and the resulting state.
+- Crash and failure recovery. Trace an interruption or partial write through cleanup, rollback, restart and retry. Check what remains visible to downstream readers.
+- Resources, quotas and memory. Follow acquisition, retention and release across success, cancellation and errors. Look for exhaustion and unbounded growth.
+- CLI and harness contracts. Trace flags, defaults, environment, paths, exit status and output through launchers and their consumers.
+- Boundary inputs. Check empty, maximum and oversized inputs and other supported extremes. Confirm which callers can supply them.
+
+Return concise findings with location, reachable trigger, consequence, severity and evidence. Distinguish observed behavior from source inference, check counterevidence and state any unresolved verification gaps.
+"""
+
+[memories]
+use_memories = false
+generate_memories = false
+dedicated_tools = false
+
+[[skills.config]]
+name = "session-recall"
+enabled = false
+
+[[skills.config]]
+name = "code-review"
+enabled = false
+
+[[skills.config]]
+name = "just-do-it"
+enabled = false
+
+[[skills.config]]
+name = "pr-proof-pack"
+enabled = false
+
+[[skills.config]]
+name = "handoff"
+enabled = false
+
+[[skills.config]]
+name = "speak-fking-english"
+enabled = false
+
+[[skills.config]]
+name = "agy-codex-orchestrator"
+enabled = false

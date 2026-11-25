@@ -11,7 +11,13 @@ import { fileURLToPath } from "node:url";
 import { withOutputLock } from "../../skills/writing-for-agents/scripts/materialize-skill-variants.mjs";
 
 const repository = fileURLToPath(new URL("../../", import.meta.url));
-const entries = ["orchestration", "findings-reviewer.config.toml", "orchestration.config.toml"];
+const entries = [
+  "orchestration",
+  "findings-reviewer.config.toml",
+  "orchestration.config.toml",
+  "review-sol.config.toml",
+  "redteam-astra.config.toml",
+];
 
 function planLinks(root, source, previousSource) {
   const directory = fs.lstatSync(root, { throwIfNoEntry: false });
@@ -86,6 +92,6 @@ export function runInstaller() {
     }
     yield* Console.log("Select explicitly: codex --profile orchestration");
     yield* Console.log("Base config, skills, permissions and active sessions were not changed.");
-  })).pipe(Command.withDescription("Install opt-in Codex orchestration and findings-reviewer profiles without editing config.toml."));
+  })).pipe(Command.withDescription("Install opt-in Codex orchestration and reviewer profiles."));
   command.pipe(Command.run({ version: "1.0.0" }), Effect.provide(NodeServices.layer), NodeRuntime.runMain);
 }

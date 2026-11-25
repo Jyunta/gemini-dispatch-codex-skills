@@ -15,15 +15,27 @@ function fixture(t) {
   return { temporary, root: path.join(temporary, "codex home") };
 }
 
+test("installs both standalone reviewer profiles through relative repository links", t => {
+  const { root } = fixture(t);
+  installProfiles({ root });
+
+  for (const profile of ["review-sol", "redteam-astra"]) {
+    const entry = `${profile}.config.toml`;
+    const target = path.join("orchestration", `${profile}.toml`);
+    assert.equal(fs.readlinkSync(path.join(repository, "codex", entry)), target);
+    assert.equal(fs.realpathSync(path.join(root, entry)), path.join(fs.realpathSync(repository), "codex", target));
+  }
+});
+
 test("stops a late local-file collision before installing any links", t => {
   const { root } = fixture(t);
   fs.mkdirSync(root);
-  const destination = path.join(root, "orchestration.config.toml");
+  const destination = path.join(root, "redteam-astra.config.toml");
   fs.writeFileSync(destination, "# personal profile\n");
   const inode = fs.lstatSync(destination).ino;
   assert.throws(() => installProfiles({ root }), /preserving/);
   assert.equal(fs.lstatSync(destination).ino, inode);
-  assert.deepEqual(fs.readdirSync(root), ["orchestration.config.toml"]);
+  assert.deepEqual(fs.readdirSync(root), ["redteam-astra.config.toml"]);
 });
 
 test("transfers only links into an explicitly selected previous clone", t => {
@@ -54,9 +66,13 @@ test("restores previous links after a caught filesystem failure", t => {
   });
   const before = snapshot();
   const symlink = fs.symlinkSync;
-  let calls = 0;
+  const profile = "redteam-astra.config.toml";
+  const target = path.join(fs.realpathSync(repository), "codex", profile);
+  const destination = path.join(root, profile);
   const failure = t.mock.method(fs, "symlinkSync", (...args) => {
-    if (++calls === 2) throw Object.assign(new Error("filesystem I/O failure"), { code: "EIO" });
+    if (args[0] === target && args[1] === destination) {
+      throw Object.assign(new Error("filesystem I/O failure"), { code: "EIO" });
+    }
     return symlink(...args);
   });
   try {

@@ -299,6 +299,56 @@ test("targeted installation updates only the selected prompt", (context) => {
   assert.equal(fs.readFileSync(beta, "utf8"), originalBeta);
 });
 
+test("a fresh subset installs only selected skills and a smaller subset retires managed links", (context) => {
+  const current = commandFixture(context);
+  const options = { ...current, harness: "codex", model: "sol" };
+  const first = installSkills({ ...options, onlySkillNames: ["alpha", "beta"] });
+  const skills = path.join(current.root, "skills");
+  assert.deepEqual(fs.readdirSync(skills).sort(), ["alpha", "beta"]);
+  assert.equal(selected(current.root), "selected:gpt-6\n");
+  assert.equal(fs.readlinkSync(path.join(skills, "beta")), path.join(first.viewRoot, "beta"));
+  const personal = path.join(skills, "personal");
+  fs.mkdirSync(personal);
+  fs.writeFileSync(path.join(personal, "SKILL.md"), "personal instructions");
+  fs.symlinkSync(personal, path.join(skills, "foreign"));
+
+  const result = installSkills({ ...options, onlySkillNames: ["alpha"] });
+
+  assert.equal(result.linksRetired, 1);
+  assert.deepEqual(fs.readdirSync(skills).sort(), ["alpha", "foreign", "personal"]);
+  const materializedSkills = fs.readdirSync(result.viewRoot, { withFileTypes: true })
+    .filter(entry => entry.isDirectory()).map(entry => entry.name);
+  assert.deepEqual(materializedSkills, ["alpha"]);
+  assert.equal(fs.readFileSync(path.join(personal, "SKILL.md"), "utf8"), "personal instructions");
+  assert.equal(fs.readlinkSync(path.join(skills, "foreign")), personal);
+});
+
+test("a Codex subset preserves commands published by a full Claude install in the shared bin directory", (context) => {
+  const current = commandFixture(context);
+  const claudeRoot = path.join(current.temporary, "claude");
+  installSkills({ ...current, root: claudeRoot, harness: "claude", model: "opus" });
+  const otherAliases = ["estimate-gh-wait", "quiet-wait"].map(name => path.join(current.binDir, name));
+  const otherLaunchers = otherAliases.map(alias => fs.readFileSync(alias, "utf8"));
+  const selectedAlias = path.join(current.binDir, "skill-cleanup-inventory");
+  fs.unlinkSync(selectedAlias);
+
+  const result = installSkills({ ...current, harness: "codex", model: "sol", onlySkillNames: ["cleanup"] });
+
+  assert.deepEqual(fs.readdirSync(path.join(current.root, "skills")), ["cleanup"]);
+  assert.equal(result.commandsRetired, 0);
+  assert.ok(fs.statSync(selectedAlias).isFile());
+  assert.deepEqual(otherAliases.map(alias => fs.readFileSync(alias, "utf8")), otherLaunchers);
+});
+
+test("rejects combining targeted and subset installs before creating a harness root", (context) => {
+  const current = fixture(context);
+  assert.throws(
+    () => installSkills({ ...current, harness: "codex", model: "sol", skillNames: ["alpha"], onlySkillNames: ["beta"] }),
+    /cannot combine --skill and --only/,
+  );
+  assert.equal(fs.existsSync(current.root), false);
+});
+
 test("switches Fable to Opus through stable links without changing other skills or settings", (t) => {
   const current = fixture(t);
   fs.mkdirSync(path.join(current.root, "skills", "personal"), { recursive: true });
