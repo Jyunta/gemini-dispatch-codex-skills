@@ -28,6 +28,10 @@ describe("Antigravity PreToolUse guard", () => {
     "rm -rf ~",
     "rm -fr /*",
     'rm -r -f "$HOME"',
+    "rm -rf /Users",
+    "rm -rf /Users/*",
+    "rm -rf /Users/alice",
+    "rm -rf /Users/alice/*",
     "rm --recursive --force /etc",
     "rm -rf --no-preserve-root build",
     "sudo /usr/sbin/mkfs.ext4 /dev/sdb",
@@ -47,6 +51,7 @@ describe("Antigravity PreToolUse guard", () => {
     "git clean -fdX",
     "git clean -f -d -x",
     "rm -rf build",
+    "rm -rf /Users/alice/project/build",
     "rm -fr build",
     "rm -r -f build"
   ])("always prompts for %s", (command) => {

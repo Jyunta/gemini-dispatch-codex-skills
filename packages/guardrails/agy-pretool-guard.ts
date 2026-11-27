@@ -73,7 +73,7 @@ function isProtectedRemovalTarget(argument: string): boolean {
   if (/^(?:~[^/]*|\$HOME|\$\{HOME\})(?:\/\*)?$/u.test(target)) return true
   if (!argument.startsWith("/")) return false
   if (target === "" || target === "/*") return true
-  if (/^\/(?:home(?:\/[^/]+)?|root)(?:\/\*)?$/u.test(target)) return true
+  if (/^\/(?:(?:home|Users)(?:\/[^/]+)?|root)(?:\/\*)?$/u.test(target)) return true
   const directory = target.split("/")[1]
   return directory !== undefined && systemDirectories.has(directory)
 }

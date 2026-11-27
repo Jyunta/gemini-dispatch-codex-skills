@@ -15,6 +15,7 @@ function fixture(t) {
     const skill = path.join(sourceRoot, name);
     fs.mkdirSync(path.join(skill, "variants"), { recursive: true });
     fs.writeFileSync(path.join(skill, "SKILL.md"), `---\nname: ${path.basename(name)}\ndescription: fixture\n---\n`);
+    fs.writeFileSync(path.join(skill, "BASE.md"), "Shared instructions\n");
     for (const model of ["gpt-6", "claude-fable-5.1", "claude-opus-5.5"]) {
       fs.writeFileSync(path.join(skill, "variants", `${model}.md`), `selected:${model}\n`);
     }
@@ -36,11 +37,11 @@ test("installs Gemini prompts and readable resources in the default and configur
     else process.env.GEMINI_CLI_HOME = previousGeminiHome;
   });
   process.env.GEMINI_CLI_HOME = "";
-  for (const skill of ["alpha", "group/beta"]) {
-    fs.writeFileSync(path.join(sourceRoot, skill, "BASE.md"), "Shared instructions\n");
-  }
-  const resources = [["catalog.json", "{}\n"], ["assets/template.txt", "Template\n"]];
+  const resources = [["catalog.json", "{}\n"], ["assets/template.txt", "Template\n"], ["references/guide.md", "Guide\n"]];
   fs.mkdirSync(path.join(sourceRoot, "alpha", "assets"));
+  fs.mkdirSync(path.join(sourceRoot, "alpha", "references"));
+  fs.mkdirSync(path.join(sourceRoot, "alpha", "scripts"));
+  fs.writeFileSync(path.join(sourceRoot, "alpha", "scripts", "hello.mjs"), "console.log('hello');\n");
   for (const [file, contents] of resources) {
     fs.writeFileSync(path.join(sourceRoot, "alpha", file), contents);
   }
@@ -53,6 +54,12 @@ test("installs Gemini prompts and readable resources in the default and configur
   assert.equal(gemini.model, "auto");
   assert.equal(selected(geminiRoot), "Shared instructions\n");
   assert.equal(selected(antigravityRoot), "Shared instructions\n");
+  const installedAlpha = path.join(antigravityRoot, "skills", "alpha");
+  assert.equal(fs.lstatSync(path.join(geminiRoot, "skills", "alpha")).isSymbolicLink(), true);
+  assert.equal(fs.lstatSync(installedAlpha).isDirectory(), true);
+  assert.equal(fs.realpathSync(path.join(installedAlpha, "SKILL.md")), path.join(fs.realpathSync(antigravityRoot), "skills", "alpha", "SKILL.md"));
+  assert.equal(fs.realpathSync(path.join(installedAlpha, "scripts", "hello.mjs")), fs.realpathSync(path.join(sourceRoot, "alpha", "scripts", "hello.mjs")));
+  assert.equal(fs.existsSync(path.join(antigravityRoot, ".skill-variants")), false);
   for (const root of [geminiRoot, antigravityRoot]) {
     const skill = path.join(root, "skills", "alpha");
     for (const [file, contents] of resources) {
@@ -65,6 +72,106 @@ test("installs Gemini prompts and readable resources in the default and configur
   process.env.GEMINI_CLI_HOME = customHome;
   installSkills({ sourceRoot, binDir, harness: "gemini", model: "gemini-flash-latest" });
   assert.equal(selected(path.join(customHome, ".gemini")), "Shared instructions\n");
+});
+
+test("Antigravity migrates legacy view and previous checkout links to real directories", (context) => {
+  const current = fixture(context);
+  const legacy = installSkills({ ...current, harness: "gemini", model: "gemini" });
+  const skills = path.join(current.root, "skills");
+  const alpha = path.join(skills, "alpha");
+  const beta = path.join(skills, "beta");
+  const previousSourceRoot = path.join(current.temporary, "previous-source");
+  const previousBeta = path.join(previousSourceRoot, "group", "beta");
+  fs.mkdirSync(previousBeta, { recursive: true });
+  fs.unlinkSync(beta);
+  fs.symlinkSync(previousBeta, beta);
+  assert.equal(fs.readlinkSync(alpha), path.join(legacy.viewRoot, "alpha"));
+
+  const options = { ...current, harness: "antigravity", model: "gemini", previousSourceRoot };
+  installSkills({ ...options, skillNames: ["alpha"] });
+  assert.equal(fs.lstatSync(alpha).isDirectory(), true);
+  assert.equal(fs.readlinkSync(beta), previousBeta);
+
+  installSkills(options);
+  for (const directory of [alpha, beta]) {
+    assert.equal(fs.lstatSync(directory).isDirectory(), true);
+    assert.equal(fs.readFileSync(path.join(directory, "SKILL.md"), "utf8"), "Shared instructions\n");
+  }
+});
+
+test("Antigravity targets one installed skill and previews subset retirement before applying it", (context) => {
+  const current = fixture(context);
+  const options = { ...current, harness: "antigravity", model: "gemini" };
+  installSkills(options);
+  const skills = path.join(current.root, "skills");
+  const beta = path.join(skills, "beta", "SKILL.md");
+  const personal = path.join(skills, "personal");
+  const foreign = path.join(skills, "foreign");
+  fs.mkdirSync(personal);
+  fs.writeFileSync(path.join(personal, "SKILL.md"), "Personal instructions");
+  fs.symlinkSync(personal, foreign);
+  fs.writeFileSync(path.join(current.sourceRoot, "alpha", "BASE.md"), "Updated alpha\n");
+  fs.writeFileSync(path.join(current.sourceRoot, "group", "beta", "BASE.md"), "Updated beta\n");
+
+  installSkills({ ...options, skillNames: ["alpha"] });
+  assert.equal(selected(current.root), "Updated alpha\n");
+  assert.equal(fs.readFileSync(beta, "utf8"), "Shared instructions\n");
+
+  fs.writeFileSync(path.join(current.sourceRoot, "alpha", "BASE.md"), "Subset alpha\n");
+  const subset = { ...options, onlySkillNames: ["alpha"] };
+  const preview = installSkills({ ...subset, dryRun: true });
+  assert.equal(preview.linksToRetire, 1);
+  assert.equal(selected(current.root), "Updated alpha\n");
+  assert.equal(fs.readFileSync(beta, "utf8"), "Shared instructions\n");
+
+  const result = installSkills(subset);
+  assert.equal(result.linksRetired, 1);
+  assert.equal(selected(current.root), "Subset alpha\n");
+  assert.deepEqual(fs.readdirSync(skills).sort(), ["alpha", "foreign", "personal"]);
+  assert.equal(fs.readFileSync(path.join(personal, "SKILL.md"), "utf8"), "Personal instructions");
+  assert.equal(fs.readlinkSync(foreign), personal);
+});
+
+test("Antigravity rejects collisions with unmanaged directories and foreign links before installing", (context) => {
+  const current = fixture(context);
+  const options = { ...current, harness: "antigravity", model: "gemini" };
+  const skills = path.join(current.root, "skills");
+  const local = path.join(skills, "beta");
+  fs.mkdirSync(local, { recursive: true });
+  fs.writeFileSync(path.join(local, "SKILL.md"), "Personal instructions");
+
+  assert.throws(() => installSkills(options), /preserving existing local or foreign skill: .*beta/);
+  assert.deepEqual(fs.readdirSync(skills), ["beta"]);
+  assert.deepEqual(fs.readdirSync(local), ["SKILL.md"]);
+  assert.equal(fs.readFileSync(path.join(local, "SKILL.md"), "utf8"), "Personal instructions");
+
+  const foreign = path.join(skills, "alpha");
+  fs.symlinkSync(local, foreign);
+  assert.throws(() => installSkills(options), /preserving existing local or foreign skill: .*alpha/);
+  assert.equal(fs.readlinkSync(foreign), local);
+});
+
+test("Antigravity restores replaced and retired skills when directory publication fails", (context) => {
+  const current = fixture(context);
+  const options = { ...current, harness: "antigravity", model: "gemini" };
+  installSkills(options);
+  const skills = path.join(current.root, "skills");
+  const beta = path.join(skills, "beta");
+  const retired = path.join(skills, "retired");
+  const legacyTarget = path.join(current.root, ".skill-variants", "jesse-merhi-skills", "retired");
+  fs.symlinkSync(legacyTarget, retired);
+  fs.writeFileSync(path.join(current.sourceRoot, "alpha", "BASE.md"), "Updated alpha\n");
+  const originalRename = fs.renameSync;
+  context.mock.method(fs, "renameSync", (source, destination) => {
+    if (path.basename(path.dirname(source)) === "staged" && destination === beta) throw new Error("injected publication failure");
+    return originalRename(source, destination);
+  });
+
+  assert.throws(() => installSkills(options), /injected publication failure/);
+  assert.equal(selected(current.root), "Shared instructions\n");
+  assert.equal(fs.readFileSync(path.join(beta, "SKILL.md"), "utf8"), "Shared instructions\n");
+  assert.equal(fs.readlinkSync(retired), legacyTarget);
+  assert.deepEqual(fs.readdirSync(current.root), ["skills"]);
 });
 
 test("installs AGENTS.md as an always-applied Cursor rule and refreshes it on reinstall", (context) => {
