@@ -518,8 +518,11 @@ export const runDispatch = Effect.fn("DispatchCodex.run")(function*(options: Run
     return yield* dispatchError("Choose either --prompt or --prompt-file.")
   }
   const identity = yield* repositoryIdentity(cwd)
-  if (options.taskId === undefined || !isWriteRole(options.role)) {
+  if (!isWriteRole(options.role)) {
     return yield* dispatchInWorktree(options, cwd, worktree, identity, stdin)
+  }
+  if (options.taskId === undefined) {
+    return yield* dispatchError(`--role ${options.role} requires --task <id> to track retries.`)
   }
   const file = yield* taskStateFile(options.taskId, identity, options.stateDir)
   return yield* options.dryRun

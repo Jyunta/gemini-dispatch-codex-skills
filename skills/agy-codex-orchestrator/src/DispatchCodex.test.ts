@@ -175,7 +175,7 @@ describe("dispatch-codex", () => {
       ["escalate", "gpt-6.2-astra", "xhigh", "workspace-write", undefined]
     ] as const
     for (const [role, model, effort, sandbox, profile] of cases) {
-      const dry = await dispatch(["run", ...runFlags(), "--role", role, "--dry-run"])
+      const dry = await runTask(role, "", "--dry-run")
       expect(dry.exitCode, dry.stderr).toBe(0)
       const args = decodeReceipt(dry.stdout).args ?? []
       expect(args.slice(0, 7)).toEqual(["exec", "-m", model, "-c", `model_reasoning_effort="${effort}"`, "-s", sandbox])
@@ -183,8 +183,22 @@ describe("dispatch-codex", () => {
     }
   })
 
+  it.each(["impl", "escalate"])("rejects %s without a task ID before creating a worktree or invoking Codex", async (role) => {
+    const worktree = join(fixture.root, "untracked worktree")
+    const output = join(fixture.root, "invocation.json")
+    const args = ["run", ...runFlags(), "--role", role, "--worktree", worktree, "--output", output, "--prompt", "EDIT_FILES"]
+
+    for (const flags of [args, [...args, "--dry-run"]]) {
+      const result = await dispatch(flags)
+      expect(result.exitCode, result.stderr).toBe(1)
+      expect(decodeReceipt(result.stdout).error).toContain("--task")
+    }
+    await expect(readdir(worktree)).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(readFile(output)).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
   it("passes an explicit low effort through the CLI to the Codex command", async () => {
-    const dry = await dispatch(["run", ...runFlags(), "--role", "impl", "--effort", "low", "--dry-run"])
+    const dry = await runTask("impl", "", "--effort", "low", "--dry-run")
     expect(dry.exitCode, dry.stderr).toBe(0)
     expect(decodeReceipt(dry.stdout).args).toContain('model_reasoning_effort="low"')
   })
@@ -211,17 +225,17 @@ describe("dispatch-codex", () => {
   })
 
   it("refuses /mnt before Git lookup and permits an explicit override without creating a worktree", async () => {
-    const refused = await dispatch(["run", ...runFlags(), "--role", "impl", "--cwd", "/mnt", "--dry-run"])
+    const refused = await runTask("impl", "", "--cwd", "/mnt", "--dry-run")
     expect(refused.exitCode).toBe(1)
     expect(decodeReceipt(refused.stdout).error).toContain("--allow-mnt")
 
     const target = join("/mnt", "dispatch-codex-test", fixture.root.split("/").at(-1) ?? "worktree")
-    const args = ["run", ...runFlags(), "--role", "impl", "--worktree", target, "--dry-run"]
-    const refusedWorktree = await dispatch(args)
+    const flags = ["--worktree", target, "--dry-run"]
+    const refusedWorktree = await runTask("impl", "", ...flags)
     expect(refusedWorktree.exitCode).toBe(1)
     expect(decodeReceipt(refusedWorktree.stdout).error).toContain("--allow-mnt")
 
-    const allowed = await dispatch([...args, "--allow-mnt"])
+    const allowed = await runTask("impl", "", ...flags, "--allow-mnt")
     expect(allowed.exitCode, allowed.stderr).toBe(0)
     expect(decodeReceipt(allowed.stdout)).toMatchObject({ worktreePath: target, createWorktree: true })
   })

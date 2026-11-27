@@ -61,6 +61,7 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
 - **上下文与应急切换**。派发 `scout` 或 `impl` 时限定目标目录和关联文件，使上下文远低于 272K Token。仅在单次输入超过 272K Token 或需要音视频排障，或 ChatGPT Plus 达到 5 小时或周上限时，才在 Antigravity 临时切用 Hydrogen。
 - **Prompt 边界注入**：统一在发送给 Codex 的 prompt 顶部附加最高优先级任务边界声明，压制第三方仓库 `AGENTS.md` 中的无关编排规则。
 - **原子状态与三轮熔断**：
+  - `impl` 和 `escalate` 必须传入 `--task <id>`，包括 `--dry-run`。升级到 `escalate` 时沿用同一个任务 ID。
   - 默认状态目录：`~/.local/state/agy-dispatch/<repo-hash>/<task-id>.json`（可用 `--state-dir` 覆盖便于测试）。
   - 复用进程身份锁（PID + `ps lstart`），启动前原子登记 `status: "running"`, `pid`, `attempt`, `worktreePath`, `baseHead`；同 `task-id` 若已有存活进程直接拒绝重派；写任务 `attempt >= 3` 硬熔断（退出码 `3`，除非 `--reset`）；`impl` 连续失败 `>= 2` 次提示或阻断并要求切 `escalate`（除非 `--force-sol`）。
 - **显式 Worktree 与完整验收**：
@@ -76,7 +77,7 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
   - 明确注释仅保护父端 `agy` 工具调用，不宣称隔离 Codex 内部命令。
 - `packages/guardrails/codex-guardrails.rules`：
   - Codex 原生 `execpolicy` 规则（经 `codex execpolicy check` 校验），对 `git push --force`、`git push -f`、`git reset --hard`、`rm -rf` 设为 `decision="forbidden"`。
-- `packages/guardrails/hooks.template.json`：指向本仓库 `agy-pretool-guard.ts` 的 `PreToolUse` 模板。
+- `node packages/guardrails/render-agy-hooks.mjs`：输出 `PreToolUse` 配置，使用当前 Node 可执行文件和本仓库 `agy-pretool-guard.ts` 的绝对路径。用长期可用的 Node 24 或更新版本生成配置。
 
 ### 2.5 Skill 适配与全局配置激活
 - `skills/code-review/` 对常规和高危 L2 均默认派 Astra（`--deep`，`high`）加全新隔离的 Neon（`gemini-4-neon-high`），不消耗 Claude 额度。仅用户显式要求额外 Anthropic 全审时用 Sonnet 5.5（`claude-sonnet-5-5-high`）作单轮静态第二席。Claude 主控时只派 Astra，由主控复核。
@@ -92,7 +93,7 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
   - 备份 `~/.gemini/GEMINI.md` 与 `~/.codex/rules/default.rules`；
   - Antigravity 侧用 `--only` 安装精简后的 13 个核心 Skill（含 `agy-codex-orchestrator`），移除无关的 `just-do-it` / `speak-fking-english` / `handoff` / `session-recall` / `pr-proof-pack` / `show-video`；
   - Codex 侧用 `--only` 安装 5 个编码与质量 Skill + `./install-codex-profiles` + `~/.codex/AGENTS.md` + `~/.codex/rules/guardrails.rules`；
-  - 安装 `~/.gemini/config/hooks.json`，并将 `~/.gemini/GEMINI.md` 符号链接指向纳入仓库版本管理的 `gemini/GEMINI.md`。
+  - 将生成的 Hook 写入 `~/.gemini/config/hooks.json`。如果文件已存在，只合并 `deterministic-command-guard` 条目。将 `~/.gemini/GEMINI.md` 符号链接指向纳入仓库版本管理的 `gemini/GEMINI.md`。
 
 ## 3. 验收标准
 - 仓库全部检查绿灯：`bun run validate:effect`（0 error、**0 warning**）与 `./tests/skills-test` 全部通过。

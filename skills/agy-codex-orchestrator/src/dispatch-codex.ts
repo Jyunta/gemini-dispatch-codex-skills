@@ -58,7 +58,7 @@ const run = Command.make("run", {
     Flag.optional, Flag.map(Option.getOrUndefined)
   ),
   deep: Flag.boolean("deep").pipe(Flag.withDescription("Route a review to Astra")),
-  taskId: optionalText("task", "Stable task ID for write-role retry tracking"),
+  taskId: optionalText("task", "Stable task ID required for impl and escalate"),
   worktree: optionalText("worktree", "Explicit worktree root, relative to --cwd"),
   branch: optionalText("branch", "Branch to create with a new worktree, defaults to a detached HEAD"),
   prompt: optionalText("prompt", "Inline assignment, defaults to stdin when no prompt file is given"),
