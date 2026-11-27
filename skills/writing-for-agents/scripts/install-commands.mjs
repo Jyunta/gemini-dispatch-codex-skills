@@ -71,7 +71,7 @@ function readManifest(outputRoot) {
   return manifest;
 }
 
-function discoverCommands(skills) {
+function discoverCommands(skills, nodeBin) {
   const commands = [];
   for (const entry of commandCatalog) {
     const skill = skills.find(candidate => candidate.name === entry.skill);
@@ -80,12 +80,15 @@ function discoverCommands(skills) {
     if (!fs.statSync(target, { throwIfNoEntry: false })?.isFile() || !fs.realpathSync(target).startsWith(`${fs.realpathSync(skill.directory)}${path.sep}`)) {
       throw new Error(`missing or external command entrypoint: ${target}`);
     }
-    commands.push({ name: entry.name, skill: entry.skill, target, runtime: entry.runtime });
+    const runtime = nodeBin !== undefined && entry.runtime[0] === "node"
+      ? [path.resolve(nodeBin), ...entry.runtime.slice(1)]
+      : entry.runtime;
+    commands.push({ name: entry.name, skill: entry.skill, target, runtime });
   }
   return commands;
 }
 
-export function planCommands({ binDir, sourceRoot, skills, skillNames, previousSourceRoot, preserveOtherCommands = false }) {
+export function planCommands({ binDir, sourceRoot, skills, skillNames, previousSourceRoot, preserveOtherCommands = false, nodeBin }) {
   const directory = path.resolve(binDir);
   assertDirectory(directory);
   const outputRoot = path.join(directory, OWNER);
@@ -96,7 +99,7 @@ export function planCommands({ binDir, sourceRoot, skills, skillNames, previousS
   if (previous !== undefined && previous.sourceRoot !== sourceRoot && (selectedSkillNames !== undefined || previous.sourceRoot !== approvedPrevious)) {
     throw new Error(`commands owned by another source: ${previous.sourceRoot}; use a full install with --previous-source to transfer ownership`);
   }
-  const selectedCommands = discoverCommands(skills);
+  const selectedCommands = discoverCommands(skills, nodeBin);
   const commands = selectedSkillNames === undefined ? [] : (previous?.commands ?? []).filter(command => !selectedSkillNames.includes(command.skill));
   commands.push(...selectedCommands);
   commands.sort((left, right) => left.name.localeCompare(right.name, "en"));
@@ -136,7 +139,7 @@ export function withInstalledCommands(options, operation) {
   const directory = path.resolve(options.binDir);
   assertDirectory(directory);
   const outputRoot = path.join(directory, OWNER);
-  const commands = discoverCommands(options.skills);
+  const commands = discoverCommands(options.skills, options.nodeBin);
   if (commands.length === 0 && fs.lstatSync(outputRoot, { throwIfNoEntry: false }) === undefined) {
     const plan = { directory, outputRoot, previous: undefined, manifest: { schemaVersion: 1, sourceRoot: options.sourceRoot, commands }, links: [], retired: [], commandsChanged: 0 };
     return { ...operation(), ...commandSummary(plan) };

@@ -296,6 +296,21 @@ test("publishes explicit commands on PATH with arguments, cwd, environment and e
   assert.deepEqual(JSON.parse(execution.stdout), { command: "inventory.mjs", args: ["two words", "'quoted'", "$HOME", ""], cwd: fs.realpathSync(current.temporary), value: "retained" });
 });
 
+test("pins command launchers to the selected Node with a minimal shell PATH", (context) => {
+  const current = commandFixture(context);
+  const nodeBin = path.join(current.temporary, "pinned node");
+  fs.symlinkSync(process.execPath, nodeBin);
+  fs.writeFileSync(path.join(current.sourceRoot, "cleanup", "scripts", "inventory.mjs"), "console.log(process.argv0);\n");
+  installSkills({ ...current, harness: "codex", model: "astra", nodeBin: path.relative(process.cwd(), nodeBin) });
+
+  // An empty PATH also proves independence on Linux hosts with /usr/bin/node.
+  for (const PATH of ["/usr/bin:/bin", ""]) {
+    const run = spawnSync(path.join(current.binDir, "skill-cleanup-inventory"), [], { encoding: "utf8", env: { PATH } });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stdout.trim(), nodeBin);
+  }
+});
+
 test("full installs retire stale managed aliases but preserve foreign replacements and third-party skills", (context) => {
   const current = commandFixture(context);
   installSkills({ ...current, harness: "codex", model: "astra" });

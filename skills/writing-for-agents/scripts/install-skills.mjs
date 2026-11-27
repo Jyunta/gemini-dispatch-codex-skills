@@ -218,7 +218,7 @@ function publishAntigravitySkills(skillsDirectory, plan, inspect) {
   return result;
 }
 
-export function installSkills({ harness, model, root, sourceRoot = sourceDefault, previousSourceRoot, requireExact = false, sessionId, dryRun = false, skillNames, onlySkillNames, binDir = path.join(os.homedir(), ".local", "bin") }) {
+export function installSkills({ harness, model, root, sourceRoot = sourceDefault, previousSourceRoot, requireExact = false, sessionId, dryRun = false, skillNames, onlySkillNames, binDir = path.join(os.homedir(), ".local", "bin"), nodeBin }) {
   const defaultRoot = harnessDirectory(harness);
   const harnessRoot = path.resolve(root ?? defaultRoot);
   // Gemini CLI's aliases and Cursor's Auto router install the model-neutral shared prompts.
@@ -249,7 +249,7 @@ export function installSkills({ harness, model, root, sourceRoot = sourceDefault
   const preview = preflight();
   const globalRule = harness === "cursor" ? cursorRulePath(harnessRoot) : undefined;
   const commandOptions = {
-    binDir, sourceRoot: plan.sourceRoot, previousSourceRoot, skills: plan.skills, skillNames,
+    binDir, nodeBin, sourceRoot: plan.sourceRoot, previousSourceRoot, skills: plan.skills, skillNames,
     preserveOtherCommands: onlySkillNames !== undefined,
   };
   if (dryRun) {
@@ -312,6 +312,7 @@ export function runInstaller() {
     model: Flag.string("model").pipe(Flag.withDescription("astra, sol, luna, fable, opus, gemini, or a full model ID. For Cursor, auto installs model-neutral prompts")),
     root: Flag.string("root").pipe(Flag.optional, Flag.withDescription("Configuration root containing skills/. Defaults: CODEX_HOME or ~/.codex, CLAUDE_CONFIG_DIR or ~/.claude, GEMINI_CLI_HOME/.gemini or ~/.gemini for Gemini CLI, ~/.gemini/config for Antigravity, and ~/.cursor for Cursor.")),
     binDir: Flag.string("bin-dir").pipe(Flag.optional, Flag.withDescription("Shared command directory; defaults to ~/.local/bin, independently of --root")),
+    nodeBin: Flag.string("node-bin").pipe(Flag.optional, Flag.withDescription("Node executable path to embed in installed command launchers")),
     previousSource: Flag.string("previous-source").pipe(Flag.optional),
     session: Flag.string("session").pipe(Flag.optional),
     skills: Flag.string("skill").pipe(Flag.atLeast(0), Flag.withDescription("Update only these skills; repeat for multiple names. Requires the same installed profile and source.")),
@@ -323,7 +324,7 @@ export function runInstaller() {
     const result = yield* Effect.try(() => installSkills({
       harness: options.harness, model: options.model,
       root: Option.getOrUndefined(options.root), previousSourceRoot: Option.getOrUndefined(options.previousSource),
-      binDir: Option.getOrUndefined(options.binDir),
+      binDir: Option.getOrUndefined(options.binDir), nodeBin: Option.getOrUndefined(options.nodeBin),
       sessionId: Option.getOrUndefined(options.session), requireExact: options.requireExact, dryRun: options.dryRun,
       skillNames: options.skills.length === 0 ? undefined : options.skills,
       onlySkillNames: options.onlySkills.length === 0 ? undefined : options.onlySkills,
