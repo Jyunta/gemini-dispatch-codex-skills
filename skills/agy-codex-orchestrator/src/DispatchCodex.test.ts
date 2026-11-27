@@ -29,6 +29,8 @@ const Receipt = Schema.Struct({
   changedFiles: Schema.optional(Schema.Array(Schema.String)),
   untrackedFiles: Schema.optional(Schema.Array(Schema.String)),
   diffStat: Schema.optional(Schema.String),
+  logPath: Schema.optional(Schema.String),
+  lastMessage: Schema.optional(Schema.String),
   error: Schema.optional(Schema.String)
 })
 const decodeReceipt = Schema.decodeUnknownSync(Schema.fromJsonString(Receipt))
@@ -51,11 +53,13 @@ const { readFileSync, writeFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 const prompt = readFileSync(0, "utf8");
 const output = args.indexOf("-o");
-if (output !== -1) {
-  writeFileSync(args[output + 1], JSON.stringify({
+const failed = prompt.includes("FAIL_TASK");
+if (output !== -1 && !failed) {
+  const message = prompt.includes("LONG_MESSAGE") ? " " + "x".repeat(2047) + "😀tail " : JSON.stringify({
     args, prompt, cwd: process.cwd(),
     credentials: ["CODEX_API_KEY", "OPENAI_API_KEY"].map(key => Object.hasOwn(process.env, key))
-  }));
+  });
+  writeFileSync(args[output + 1], message);
 }
 if (prompt.includes("EDIT_FILES")) {
   writeFileSync("tracked.txt", "edited\\n");
@@ -66,11 +70,12 @@ if (prompt.includes("HOLD_TASK")) {
   setInterval(() => {}, 1000);
 } else {
   writeFileSync(1, "fixture ran\\n");
-  process.exitCode = prompt.includes("FAIL_TASK") ? 17 : 0;
+  writeFileSync(2, "fixture stderr\\n");
+  process.exitCode = failed ? 17 : 0;
 }
 `
 
-let fixture: { root: string; repo: string; state: string; codex: string; home: string }
+let fixture: { root: string; repo: string; state: string; codex: string; home: string; tmp: string }
 
 const collect = (child: ChildProcessWithoutNullStreams, input = "") => {
   child.stdin.end(input)
@@ -90,10 +95,11 @@ beforeEach(async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "dispatch-codex-test-")))
   fixture = {
     root, repo: join(root, "repo"), state: join(root, "state"),
-    codex: join(root, "fake-codex"), home: join(root, "codex-home")
+    codex: join(root, "fake-codex"), home: join(root, "codex-home"), tmp: join(root, "tmp")
   }
   await mkdir(fixture.repo)
   await mkdir(fixture.home)
+  await mkdir(fixture.tmp)
   await writeFile(fixture.codex, fakeCodexSource, { mode: 0o700 })
   await git(["init", "--quiet", "--template=", "--initial-branch=main"])
   await git(["fast-import", "--quiet"], [
@@ -126,7 +132,7 @@ const launch = async (args: ReadonlyArray<string>, input = "") => {
   // Use the real inherited environment to test the grandchild's credential stripping.
   const env = {
     ...process.env, CODEX_HOME: fixture.home, CODEX_API_KEY: "fixture-codex-key", OPENAI_API_KEY: "fixture-openai-key",
-    DISPATCH_TEST_READY: join(fixture.root, "ready")
+    DISPATCH_TEST_READY: join(fixture.root, "ready"), TMPDIR: fixture.tmp
   }
   const child = spawn(process.execPath, [wrapper, ...args], {
     cwd: fixture.repo, env, stdio: [stdin.fd, stdout.fd, stderr.fd]
@@ -144,6 +150,8 @@ const dispatch = async (args: ReadonlyArray<string>, input?: string) => (await l
 const runFlags = () => ["--state-dir", fixture.state, "--codex-bin", fixture.codex, "--json"]
 const runTask = (role: string, prompt: string, ...flags: ReadonlyArray<string>) =>
   dispatch(["run", ...runFlags(), "--task", "T3", "--role", role, "--prompt", prompt, ...flags])
+// On macOS, the Git launcher may leave its own cache in TMPDIR.
+const dispatchTempEntries = async () => (await readdir(fixture.tmp)).filter((entry) => entry !== "xcrun_db")
 const status = async (...flags: ReadonlyArray<string>) => {
   const result = await dispatch(["status", "--state-dir", fixture.state, "--task", "T3", "--json", ...flags])
   expect(result.exitCode, result.stderr).toBe(0)
@@ -161,9 +169,17 @@ describe("dispatch-codex", () => {
 
     const result = await dispatch(["run", ...runFlags(), "--role", "review", "--deep", "--output", output, "--output-schema", outputSchema], "Review the assigned changes.")
     expect(result.exitCode, result.stderr).toBe(0)
-    expect(decodeReceipt(result.stdout).ok).toBe(true)
-    expect(result.stderr).toContain("fixture ran")
-    const invocation = decodeInvocation(await readFile(output, "utf8"))
+    const receipt = decodeReceipt(result.stdout)
+    expect(receipt.ok).toBe(true)
+    expect(result.stderr).not.toContain("fixture ran")
+    expect(result.stderr).not.toContain("fixture stderr")
+    if (receipt.logPath === undefined) throw new Error("Expected a Codex log file")
+    const log = await readFile(receipt.logPath, "utf8")
+    expect(log).toContain("fixture ran")
+    expect(log).toContain("fixture stderr")
+    const message = await readFile(output, "utf8")
+    expect(receipt.lastMessage).toBe(message)
+    const invocation = decodeInvocation(message)
     expect(invocation.args).toEqual([
       "exec", "-m", "gpt-6.2-astra", "-c", 'model_reasoning_effort="high"', "-s", "read-only",
       "-c", 'model_provider="openai"', "-c", 'forced_login_method="chatgpt"', "-C", fixture.repo,
@@ -185,6 +201,37 @@ describe("dispatch-codex", () => {
       expect(args.slice(0, 7)).toEqual(["exec", "-m", model, "-c", `model_reasoning_effort="${effort}"`, "-s", sandbox])
       expect(args.slice(13)).toEqual(profile === undefined ? ["-"] : ["-p", profile, "--ephemeral", "-"])
     }
+  })
+
+  it("streams Codex output with --verbose while reading an explicit final message", async () => {
+    const output = join(fixture.root, "verbose.json")
+    const result = await runTask("review", "Review the assignment.", "--verbose", "--output", output)
+    expect(result.exitCode, result.stderr).toBe(0)
+    expect(result.stderr).toContain("fixture ran")
+    expect(result.stderr).toContain("fixture stderr")
+    const receipt = decodeReceipt(result.stdout)
+    expect(receipt.logPath).toBeUndefined()
+    expect(receipt.lastMessage).toBe(await readFile(output, "utf8"))
+    expect(await dispatchTempEntries()).toEqual([])
+  })
+
+  it("captures and truncates a scout message without leaving a temporary output file", async () => {
+    const dry = await runTask("scout", "", "--dry-run")
+    expect(dry.exitCode, dry.stderr).toBe(0)
+    const dryReceipt = decodeReceipt(dry.stdout)
+    expect(dryReceipt.args).not.toContain("-o")
+    expect(dryReceipt.logPath).toBeUndefined()
+    expect(dryReceipt.lastMessage).toBeUndefined()
+    expect(await dispatchTempEntries()).toEqual([])
+    await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
+
+    const result = await runTask("scout", "LONG_MESSAGE")
+    expect(result.exitCode, result.stderr).toBe(0)
+    const receipt = decodeReceipt(result.stdout)
+    if (receipt.logPath === undefined) throw new Error("Expected a Codex log file")
+    expect(receipt.lastMessage).toBe(`${"x".repeat(2047)}\n...[truncated; see ${receipt.logPath}]`)
+    expect(await dispatchTempEntries()).toEqual(["agy-dispatch-logs"])
+    await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it.each(["impl", "escalate"])("rejects %s without a task ID before creating a worktree or invoking Codex", async (role) => {
@@ -281,11 +328,13 @@ describe("dispatch-codex", () => {
   }, 15_000)
 
   it("rejects concurrent dispatch and reset, then records failure when the owner is interrupted", async () => {
+    const readyFile = join(fixture.root, "ready")
+    await writeFile(readyFile, "")
     const stopWatching = new AbortController()
-    const watcher = watch(fixture.root, { signal: AbortSignal.any([stopWatching.signal, AbortSignal.timeout(5_000)]) })
+    const watcher = watch(readyFile, { signal: AbortSignal.any([stopWatching.signal, AbortSignal.timeout(5_000)]) })
     const ready = (async () => {
       for await (const event of watcher) {
-        if (event.filename === "ready") return
+        if (event.eventType === "change") return
       }
     })()
     const first = await launch(["run", ...runFlags(), "--role", "impl", "--task", "T3", "--prompt", "HOLD_TASK"])
@@ -306,6 +355,7 @@ describe("dispatch-codex", () => {
     }
     expect((await first.result).exitCode).toBe(130)
     expect(await status()).toEqual({ status: "failed", attempts: 1, solFailures: 1, exitCode: 130 })
+    expect(await dispatchTempEntries()).toEqual(["agy-dispatch-logs"])
     expect((await runTask("impl", "")).exitCode).toBe(0)
   }, 15_000)
 
@@ -346,10 +396,15 @@ describe("dispatch-codex", () => {
     const args = ["batch", ...runFlags(), "--plan", plan, "--concurrency", "2"]
     const result = await dispatch(args)
     expect(result.exitCode, result.stderr).toBe(1)
-    expect(decodeBatch(result.stdout)).toMatchObject([
+    const receipts = decodeBatch(result.stdout)
+    expect(receipts).toMatchObject([
       { ok: false, taskId: "a", exitCode: 17, worktreePath: a, changedFiles: [], untrackedFiles: [] },
       { ok: true, taskId: "b", exitCode: 0, worktreePath: b, changedFiles: ["tracked.txt"], untrackedFiles: ["new file.txt"] }
     ])
+    const failed = receipts[0]
+    if (failed?.logPath === undefined) throw new Error("Expected a Codex log file for the failed task")
+    expect(failed.lastMessage).toBeUndefined()
+    expect(await readFile(failed.logPath, "utf8")).toContain("fixture stderr")
     expect(await readFile(join(b, "new file.txt"), "utf8")).toBe("created\n")
 
     const alias = join(fixture.root, "alias")

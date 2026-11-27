@@ -19,6 +19,8 @@ Choose the role for the assignment.
 
 Scope each `scout` and `impl` assignment to the target directories and relevant files to stay well under Sol's 272K-token long-context threshold.
 
+Prefer `--prompt-file` for assignments longer than a few lines to keep coordinator context lean. By default, `dispatch-codex` captures raw Codex stdout and stderr in a log file and returns a concise receipt with `lastMessage`, `logPath`, changed files and `diffStat` when available. Pass `--verbose` only when live streaming is needed. For logs or transcripts over 20 KB, use `--role scout` or a local summary script to keep raw output out of the coordinator context.
+
 Switch to Gemini 4 Hydrogen (`gemini-4-hydrogen-low` or `gemini-4-hydrogen-medium`) only in these two emergencies.
 
 1. A single input exceeds 272K tokens or debugging requires audio or video. Hydrogen has flat pricing across its 1M-token context and supports audio and video natively.

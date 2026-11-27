@@ -24,8 +24,9 @@ Complete the assigned change in the specified repository and file scope. Use the
 
 ## Handoff
 
-Send the coordinator a concise report.
+Send the coordinator a report of at most 25 lines.
 
-- List the changed files and what they do.
-- Report the verification commands and their results.
+- List each changed file with a one-line purpose.
+- Report the exact verification commands and pass/fail counts.
 - State any verification limits or remaining blockers.
+- Do not paste raw diffs or verbose test logs.

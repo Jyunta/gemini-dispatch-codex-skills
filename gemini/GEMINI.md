@@ -47,6 +47,13 @@
 - **Claude Opus 5.5 异构席位**只用于第三级客观终审和 **L3 UI/前端视觉设计打分**，严禁用于常规 L2 盲审。L3 用 `claude-opus-5-5-high`，结合 `frontend-ui-validation` 截图按 `design` 固定准则评分。Opus 缺席时报告 `Opus 5.5 缺席（原因）`，并标记视觉评审未完成。
 - **静态席位派发**：优先使用全新隔离的只读 `/swarm` worker 或全新隔离会话。非交互式示例为 `agy --model gemini-4-neon-high --mode plan --sandbox --print-timeout 180s -p "$review_prompt"`。显式按需 Anthropic 全审用 `claude-sonnet-5-5-high`，L3 视觉用 `claude-opus-5-5-high`。客观终审用 `agy --model claude-opus-5-5-medium --mode plan --sandbox --print-timeout 180s -p "$arbitration_prompt"`，极复杂时切为 `claude-opus-5-5-high`。终审 Prompt 内嵌完整简报，单轮零工具，硬上限 180s。仅确需补查的超大 L2 PR 可用 `--print-timeout 300s`。按 `code-review` 的 `references/reviewer-dispatch.md` 在 Prompt 首行覆写只读角色边界，忽略 `GEMINI.md` 派单规则，禁止 shell 写操作、`codex`、嵌套 `agy -p` 或派发其他 worker。严禁静默换模或冒充指定模型。
 
+### 主控上下文瘦身与缓存保护
+
+- **主控上下文水位**：单会话尽量控制在 **<150K Token**。Neon 超过 200K Token 进入长上下文高倍率档，跨时段或等待后台 Codex 4–6 分钟易使 Prompt Cache 失效，触发整段冷重算。完成里程碑（如调研转开发）、读完大输出或跨小时恢复前，提醒用户执行 `/compact` 或带 5 行摘要开新会话。
+- **大日志与大文件**：严禁主控用 `read_file` 分块读取 >20 KB 的日志、`transcript_full.jsonl` 或陌生大目录。用单次本地 Python/jq 脚本只打印统计摘要，或派 `dispatch-codex run --role scout` 返回 ≤ 40 行结论与行号。
+- **精简派单与等待**：超过约 500 字的任务书先写入临时文件，再用 `--prompt-file` 传入，避免命令行和后台通知反复回显。默认静默落盘日志并返回精简回执，实时排错时加 `--verbose`。后台等待耗时 Codex 任务时将 `NotificationTimeoutSeconds` 设为 `600`，避免空轮询唤醒大上下文。
+- **合并验收**：测试默认用精简输出（如 `vitest --reporter=dot`）。在一条命令链中运行 `git status`、`git diff --stat` 和校验命令，避免整篇重读 Codex 已改文件。
+
 ## 4. 验收、双端护栏与 Git 纪律
 - Codex 每次返回后，必须在其**实际执行的工作树目录（`worktreePath`）**核查 `git status --short --untracked-files=all` 与 `git diff HEAD --stat`（防漏验未跟踪新文件与暂存改动、防越界修改），再核验 lint / 测试输出。
 - 验收通过后，按单任务单提交（Atomic Commit）记录进度并更新 `docs/TASKS.md`。

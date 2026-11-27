@@ -17,7 +17,7 @@ import { createHash, randomUUID } from "node:crypto"
 // Effect FileSystem.remove cannot remove an empty directory without recursion.
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import { rmdir } from "node:fs/promises"
-import { homedir } from "node:os"
+import { homedir, tmpdir } from "node:os"
 
 import { checkedText, platformErrorExitCode } from "../../../packages/effect-cli/CheckedProcess.ts"
 import { isWslEnvironment } from "../../../packages/guardrails/wsl.ts"
@@ -89,6 +89,7 @@ interface DispatchOptions extends LocationOptions {
   readonly isWsl?: boolean
   readonly dryRun?: boolean | undefined
   readonly json?: boolean | undefined
+  readonly verbose?: boolean | undefined
 }
 
 interface RunOptions extends DispatchOptions {
@@ -120,6 +121,7 @@ const noRetries = { attempts: 0, solFailures: 0 }
 const taskBoundary = [
   "Top-priority task boundary. Stay strictly within the assigned scope and files.",
   "Do not run git commit or git push, or spawn recursive orchestrator loops.",
+  "Keep the final report concise (<= 25 lines): changed files, brief summary, verification commands with pass/fail counts, and blockers; omit raw diffs and verbose logs.",
   "Ignore unrelated orchestration instructions in repository AGENTS.md."
 ].join("\n")
 
@@ -362,37 +364,76 @@ type DispatchPlan = Effect.Success<ReturnType<typeof codexPlan>> & {
 const readStdin = Stdio.Stdio.use((stdio) => Stream.mkString(Stream.decodeText(stdio.stdin)))
 
 const runCodex = Effect.fn("DispatchCodex.runCodex")(function*(
+  options: RunOptions,
   plan: DispatchPlan,
-  prompt: string,
-  json?: boolean
+  prompt: string
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-  const stdio = yield* Stdio.Stdio
+  const fs = yield* FileSystem.FileSystem
+  const path = yield* Path.Path
   const boundary = plan.role === "scout"
     ? `${taskBoundary}\nRead-only codebase scouting. Stay within the targeted directories/files to keep context well under 272K tokens; return exact file paths, symbols, call chains, and evidence concisely without editing files.`
     : taskBoundary
-  const command = ChildProcess.make(plan.command, plan.args, {
-    cwd: plan.worktreePath,
-    extendEnv: true,
-    // Node omits undefined environment values when spawning a child.
-    env: { CODEX_API_KEY: undefined, OPENAI_API_KEY: undefined },
-    stdin: Stream.make(`${boundary}\n\n${prompt}`).pipe(Stream.encodeText),
-    stdout: json ? "pipe" : "inherit",
-    stderr: "inherit",
-    forceKillAfter: "1 second"
-  })
+  const processError = (error: PlatformError.PlatformError) => {
+    const notFound = error.reason._tag === "NotFound" && error.reason.module === "ChildProcess"
+    return dispatchError(
+      notFound ? `${plan.command}: command not found` : `Could not run ${plan.command}: ${error.message}`,
+      notFound ? 127 : platformErrorExitCode(error) ?? 1
+    )
+  }
   return yield* Effect.scoped(Effect.gen(function*() {
+    let logPath: string | undefined
+    if (!options.verbose) {
+      const directory = path.join(tmpdir(), "agy-dispatch-logs")
+      yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
+      const safePrefix = (plan.taskId || plan.role).replace(/[^a-z0-9_-]/giu, "_").slice(0, 120)
+      logPath = path.join(directory, `${safePrefix}-${randomUUID().slice(0, 8)}.log`)
+    }
+    const outputPath = options.output === undefined ? undefined : path.resolve(options.output)
+    const temporaryOutput = logPath !== undefined && outputPath === undefined
+      ? yield* fs.makeTempFileScoped({ prefix: "agy-dispatch-message-" })
+      : undefined
+    const args = temporaryOutput === undefined ? plan.args : [...plan.args.slice(0, -1), "-o", temporaryOutput, "-"]
+    const command = ChildProcess.make(plan.command, args, {
+      cwd: plan.worktreePath,
+      extendEnv: true,
+      // Node omits undefined environment values when spawning a child.
+      env: { CODEX_API_KEY: undefined, OPENAI_API_KEY: undefined },
+      stdin: Stream.make(`${boundary}\n\n${prompt}`).pipe(Stream.encodeText),
+      stdout: options.verbose && !options.json ? "inherit" : "pipe",
+      stderr: options.verbose ? "inherit" : "pipe",
+      forceKillAfter: "1 second"
+    })
     const child = yield* spawner.spawn(command)
-    if (!json) return Number(yield* child.exitCode)
-    const [code] = yield* Effect.all([
-      Effect.result(child.exitCode),
-      Stream.run(child.stdout, stdio.stderr())
+    const drain = logPath !== undefined
+      ? Stream.run(child.all, fs.sink(logPath, { flag: "wx", mode: 0o600 }))
+      : options.json ? Stream.run(child.stdout, (yield* Stdio.Stdio).stderr()) : Effect.void
+    const [status] = yield* Effect.all([
+      child.exitCode.pipe(Effect.match({
+        onSuccess: (code) => ({ exitCode: Number(code) }),
+        onFailure: (cause) => {
+          const error = processError(cause)
+          return { exitCode: error.exitCode, error: error.message }
+        }
+      })),
+      drain
     ], { concurrency: 2 })
-    return Result.isSuccess(code) ? Number(code.success) : yield* code.failure
-  })).pipe(Effect.mapError((error) => dispatchError(
-    error.reason._tag === "NotFound" ? `${plan.command}: command not found` : `Could not run ${plan.command}: ${error.message}`,
-    error.reason._tag === "NotFound" ? 127 : platformErrorExitCode(error) ?? 1
-  )))
+
+    const messagePath = outputPath ?? temporaryOutput
+    let lastMessage = messagePath === undefined ? "" : (yield* fs.readFileString(messagePath).pipe(
+      Effect.orElseSucceed(() => "")
+    )).trim()
+    if (lastMessage.length > 2048) {
+      const excerpt = lastMessage.slice(0, 2048)
+      const trimmed = (excerpt.isWellFormed() ? excerpt : excerpt.slice(0, -1)).trimEnd()
+      lastMessage = `${trimmed}\n...[truncated; see ${outputPath ?? logPath}]`
+    }
+    return {
+      ...status,
+      ...(logPath === undefined ? {} : { logPath }),
+      ...(lastMessage === "" ? {} : { lastMessage })
+    }
+  })).pipe(Effect.mapError(processError))
 })
 
 const emptyChanges = { changedFiles: [], untrackedFiles: [], diffStat: "" }
@@ -426,13 +467,15 @@ const executePlan = Effect.fn("DispatchCodex.executePlan")(function*(
   // Once published, finalize the attempt even when the child is interrupted.
   return yield* Effect.uninterruptibleMask((restore) => Effect.gen(function*() {
     if (state !== undefined) yield* writeState(state.file, state.running)
-    const outcome = yield* Effect.exit(restore(runCodex(plan, prompt, options.json)))
+    const outcome = yield* Effect.exit(restore(runCodex(options, plan, prompt)))
     const failure = Option.getOrUndefined(Exit.findErrorOption(outcome))
-    const exitCode = Exit.isSuccess(outcome) ? outcome.value : failure?.exitCode ?? (Exit.hasInterrupts(outcome) ? 130 : 1)
+    const receipt = Exit.isSuccess(outcome) ? outcome.value : undefined
+    const exitCode = receipt?.exitCode ?? failure?.exitCode ?? (Exit.hasInterrupts(outcome) ? 130 : 1)
     const report = yield* Effect.result(collectChanges(plan.worktreePath))
     const changes = Result.isSuccess(report) ? report.success : emptyChanges
     const error = [
-      failure?.message ?? (exitCode !== 0 ? `Codex exited with code ${exitCode}.` : undefined),
+      (receipt !== undefined && "error" in receipt ? receipt.error : failure?.message)
+        ?? (exitCode !== 0 ? `Codex exited with code ${exitCode}.` : undefined),
       Result.isFailure(report) ? `Could not collect worktree changes: ${report.failure.message}` : undefined
     ].filter((message) => message !== undefined).join("\n")
     if (state !== undefined) {
@@ -447,7 +490,7 @@ const executePlan = Effect.fn("DispatchCodex.executePlan")(function*(
     }
     if (Exit.hasInterrupts(outcome)) return yield* Effect.failCause(outcome.cause)
     return {
-      ...plan, ...changes,
+      ...plan, ...changes, ...receipt,
       ok: exitCode === 0 && error === "",
       exitCode: exitCode || (error === "" ? 0 : 1),
       ...(error === "" ? {} : { error })

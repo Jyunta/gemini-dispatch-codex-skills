@@ -19,7 +19,8 @@ const dispatchFlags = {
   codexBin: optionalText("codex-bin", "Codex executable, defaults to codex"),
   allowMnt: Flag.boolean("allow-mnt").pipe(Flag.withDescription("Allow execution under /mnt")),
   dryRun: Flag.boolean("dry-run").pipe(Flag.withDescription("Validate and print the plan without creating worktrees or recording attempts")),
-  json: Flag.boolean("json").pipe(Flag.withDescription("Print a JSON receipt on stdout"))
+  json: Flag.boolean("json").pipe(Flag.withDescription("Print a JSON receipt on stdout")),
+  verbose: Flag.boolean("verbose").pipe(Flag.withDescription("Stream raw Codex stdout/stderr to the terminal instead of capturing to a log file"))
 }
 
 const printJson = (value: unknown) => Console.log(JSON.stringify(value, null, 2))
@@ -46,6 +47,8 @@ const renderReceipt = (receipt: BatchReceipt) => [
   ...receipt.changedFiles.map((file) => `Changed: ${file}`),
   ...receipt.untrackedFiles.map((file) => `Untracked: ${file}`),
   ...(receipt.diffStat === "" ? [] : [receipt.diffStat]),
+  ...("lastMessage" in receipt && receipt.lastMessage !== undefined ? [`Summary:\n${receipt.lastMessage}`] : []),
+  ...("logPath" in receipt && receipt.logPath !== undefined ? [`Log: ${receipt.logPath}`] : []),
   ...("error" in receipt && receipt.error !== undefined ? [receipt.error] : [])
 ].join("\n")
 

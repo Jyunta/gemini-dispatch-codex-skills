@@ -18,3 +18,4 @@
 - [x] **T14｜审查权分离与三级争议裁决**：常规和高危 L2 默认使用 Astra 加隔离 Neon，Sonnet 5.5 仅显式按需启用。严禁静默驳回 Astra 的严重发现，依次按适用条件走复现单测、书记员呈报用户或 Opus 5.5 单轮零工具客观终审。
 - [x] **T15｜跨平台通用化（原生 Linux / WSL2 / macOS）**：增加 WSL 运行时探测使 `/mnt/` 护栏仅在 WSL2 生效（不误伤原生 Linux 挂载点），补全 macOS 系统目录保护，更新 `gemini/GEMINI.md` 为跨平台护栏并明确仅依赖 Node 24+ 运行期。
 - [x] **T16｜一键跨平台激活、安装期 `doctor` 硬门禁与运行期 `PreInvocation` 拦截**：支持 `install-commands` 固化 Node 24+ 绝对路径，实现 `agy-preinvocation-guard.ts`（默认严格 `terminate` + `AGY_ORCH_GUARD` 逃生阀）、`verify-orchestration.mjs` 与 `scripts/activate-orchestration.mjs`，完成全量单测与本机实机激活验活。
+- [x] **T17｜主控上下文瘦身、静默日志落盘与缓存保护**：`dispatch-codex` 默认静默捕获 Codex stdout/stderr 至受保护日志并回传精简 `lastMessage`（≤2048 字符）与 `logPath`（保留 `--verbose` 实时流逃生口）；更新 `gemini/GEMINI.md`、`agy-codex-orchestrator` 与 `codex/executor-AGENTS.md`，固化主控 `<150K` 水位提醒、>20 KB 日志外包、`--prompt-file` 优先、600s 通知超时及 ≤25 行执行汇报约束。
