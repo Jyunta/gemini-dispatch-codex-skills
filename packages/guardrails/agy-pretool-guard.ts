@@ -11,6 +11,8 @@ import * as Stdio from "effect/Stdio"
 import * as Stream from "effect/Stream"
 import { pathToFileURL } from "node:url"
 
+import { isWslEnvironment } from "./wsl.ts"
+
 export interface HookDecision {
   readonly decision: "allow" | "ask" | "force_ask" | "deny"
   readonly reason?: string
@@ -34,7 +36,7 @@ const highIoCommands = new Set([
 ])
 const systemDirectories = new Set([
   "bin", "boot", "dev", "etc", "lib", "lib32", "lib64", "libx32", "opt", "proc",
-  "run", "sbin", "srv", "sys", "usr", "var"
+  "run", "sbin", "srv", "sys", "usr", "var", "System", "Applications", "Library", "Volumes"
 ])
 const commandWrappers = new Set(["command", "env", "exec", "sudo", "time"])
 const gitOptionsWithValue = new Set(["-C", "-c", "--git-dir", "--namespace", "--work-tree", "--config-env"])
@@ -131,7 +133,7 @@ function evaluateCommand(words: readonly string[], crossesMount: boolean): HookD
   return allow
 }
 
-export function evaluatePreToolUse(rawInput: string): HookDecision {
+export function evaluatePreToolUse(rawInput: string, { isWsl }: { readonly isWsl?: boolean } = {}): HookDecision {
   const input = decodeHookInput(rawInput)
   if (input._tag === "Failure") {
     return { decision: "ask", reason: "Invalid Antigravity PreToolUse JSON or payload." }
@@ -144,7 +146,9 @@ export function evaluatePreToolUse(rawInput: string): HookDecision {
     return { decision: "ask", reason: "The run_command payload needs a string CommandLine." }
   }
   const { CommandLine } = args.value
-  const crossesMount = (cwd?.startsWith("/mnt/") ?? false) || /\/mnt\/[a-zA-Z](?:\/|(?=$|[\s"';&|)]))/u.test(CommandLine)
+  const windowsMount = /^\/mnt\/[a-zA-Z](?:\/|$)/u.test(cwd ?? "")
+    || /\/mnt\/[a-zA-Z](?:\/|(?=$|[\s"';&|)]))/u.test(CommandLine)
+  const crossesMount = windowsMount && (isWsl ?? isWslEnvironment())
   let strongest = allow
   for (const words of commandWords(CommandLine)) {
     const decision = evaluateCommand(words, crossesMount)

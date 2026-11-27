@@ -1,3 +1,5 @@
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 // These tests launch the installed command entrypoint as an independent OS process.
 // @effect-diagnostics-next-line nodeBuiltinImport:off
@@ -11,6 +13,8 @@ import { join } from "node:path"
 import { text } from "node:stream/consumers"
 import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+
+import { runDispatch } from "./DispatchCodex.ts"
 
 const wrapper = fileURLToPath(new URL("../scripts/dispatch-codex", import.meta.url))
 
@@ -224,20 +228,26 @@ describe("dispatch-codex", () => {
     await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
-  it("refuses /mnt before Git lookup and permits an explicit override without creating a worktree", async () => {
-    const refused = await runTask("impl", "", "--cwd", "/mnt", "--dry-run")
-    expect(refused.exitCode).toBe(1)
-    expect(decodeReceipt(refused.stdout).error).toContain("--allow-mnt")
-
+  it("refuses /mnt in WSL unless explicitly allowed and permits it on native hosts", async () => {
     const target = join("/mnt", "dispatch-codex-test", fixture.root.split("/").at(-1) ?? "worktree")
-    const flags = ["--worktree", target, "--dry-run"]
-    const refusedWorktree = await runTask("impl", "", ...flags)
-    expect(refusedWorktree.exitCode).toBe(1)
-    expect(decodeReceipt(refusedWorktree.stdout).error).toContain("--allow-mnt")
+    const dryRun = (options: { readonly cwd?: string; readonly isWsl: boolean; readonly allowMnt?: boolean }) =>
+      Effect.runPromise(runDispatch({
+        cwd: fixture.repo, stateDir: fixture.state, role: "impl", taskId: "T3", dryRun: true,
+        worktree: target, ...options
+      }).pipe(
+        // @effect-diagnostics-next-line strictEffectProvide:off
+        Effect.provide(NodeServices.layer)
+      ))
 
-    const allowed = await runTask("impl", "", ...flags, "--allow-mnt")
-    expect(allowed.exitCode, allowed.stderr).toBe(0)
-    expect(decodeReceipt(allowed.stdout)).toMatchObject({ worktreePath: target, createWorktree: true })
+    await expect(dryRun({ cwd: "/mnt", isWsl: true })).rejects.toMatchObject({
+      exitCode: 1, message: expect.stringContaining("from /mnt under /mnt")
+    })
+    await expect(dryRun({ isWsl: true })).rejects.toMatchObject({
+      exitCode: 1, message: expect.stringContaining("--allow-mnt")
+    })
+    await expect(dryRun({ isWsl: true, allowMnt: true })).resolves.toMatchObject({ ok: true, createWorktree: true })
+    await expect(dryRun({ isWsl: false })).resolves.toMatchObject({ ok: true, createWorktree: true })
+    await expect(readdir(fixture.state)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it("persists failures, routes the third attempt to escalation and enforces the hard limit until reset", async () => {

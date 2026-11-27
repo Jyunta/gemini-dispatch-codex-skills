@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { evaluatePreToolUse } from "./agy-pretool-guard.ts"
+import { isWslEnvironment } from "./wsl.ts"
 
 const runCommand = (CommandLine: string, cwd = "/home/jesse/skills") =>
   JSON.stringify({ toolCall: { name: "run_command", args: { CommandLine } }, cwd })
@@ -32,6 +33,10 @@ describe("Antigravity PreToolUse guard", () => {
     "rm -rf /Users/*",
     "rm -rf /Users/alice",
     "rm -rf /Users/alice/*",
+    "rm -rf /System",
+    "rm -rf /Applications",
+    "rm -rf /Library",
+    "rm -rf /Volumes",
     "rm --recursive --force /etc",
     "rm -rf --no-preserve-root build",
     "sudo /usr/sbin/mkfs.ext4 /dev/sdb",
@@ -69,11 +74,21 @@ describe("Antigravity PreToolUse guard", () => {
     ["cargo test", "/mnt/c/project"],
     ["codex", "/mnt/c/project"]
   ])("warns about WSL2 when running %s from %s", (command, cwd) => {
-    expect(evaluatePreToolUse(runCommand(command, cwd))).toMatchObject({ decision: "ask", reason: expect.stringContaining("WSL2") })
+    expect(evaluatePreToolUse(runCommand(command, cwd), { isWsl: true })).toMatchObject({
+      decision: "ask", reason: expect.stringContaining("WSL2")
+    })
+  })
+
+  it.each(["/mnt/c/project", "/mnt/data/project"])("allows high-I/O commands from %s outside WSL", (cwd) => {
+    expect(evaluatePreToolUse(runCommand("cargo test", cwd), { isWsl: false })).toEqual({ decision: "allow" })
+  })
+
+  it("allows high-I/O commands from a regular mount in WSL", () => {
+    expect(evaluatePreToolUse(runCommand("cargo test", "/mnt/data/project"), { isWsl: true })).toEqual({ decision: "allow" })
   })
 
   it("allows a low-I/O command from a Windows mount", () => {
-    expect(evaluatePreToolUse(runCommand("git status", "/mnt/c/project"))).toEqual({ decision: "allow" })
+    expect(evaluatePreToolUse(runCommand("git status", "/mnt/c/project"), { isWsl: true })).toEqual({ decision: "allow" })
   })
 
   it.each([
@@ -82,5 +97,30 @@ describe("Antigravity PreToolUse guard", () => {
     '{"toolCall":{"name":"run_command","args":{"CommandLine":17}}}'
   ])("asks when the hook input is invalid (%s)", (input) => {
     expect(evaluatePreToolUse(input)).toMatchObject({ decision: "ask", reason: expect.any(String) })
+  })
+})
+
+describe("WSL runtime detection", () => {
+  it.each([
+    { WSL_DISTRO_NAME: "Ubuntu" },
+    { WSL_INTEROP: "/run/WSL/123_interop" }
+  ])("detects WSL on Linux from %o without reading the kernel version", (env) => {
+    const readProcVersion = vi.fn(() => "")
+    expect(isWslEnvironment({ platform: "linux", env, readProcVersion })).toBe(true)
+    expect(readProcVersion).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["Linux version 6.6.87.2-Microsoft-standard-WSL2", true],
+    ["Linux version 6.8.0-generic", false]
+  ])("uses the Linux kernel version %s when WSL variables are empty", (version, expected) => {
+    const env = { WSL_DISTRO_NAME: "", WSL_INTEROP: "" }
+    expect(isWslEnvironment({ platform: "linux", env, readProcVersion: () => version })).toBe(expected)
+  })
+
+  it("ignores WSL variables on macOS without reading the kernel version", () => {
+    const readProcVersion = vi.fn(() => "Linux version 6.6.87.2-Microsoft-standard-WSL2")
+    expect(isWslEnvironment({ platform: "darwin", env: { WSL_DISTRO_NAME: "Ubuntu" }, readProcVersion })).toBe(false)
+    expect(readProcVersion).not.toHaveBeenCalled()
   })
 })

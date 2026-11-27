@@ -50,9 +50,11 @@
 ## 4. 验收、双端护栏与 Git 纪律
 - Codex 每次返回后，必须在其**实际执行的工作树目录（`worktreePath`）**核查 `git status --short --untracked-files=all` 与 `git diff HEAD --stat`（防漏验未跟踪新文件与暂存改动、防越界修改），再核验 lint / 测试输出。
 - 验收通过后，按单任务单提交（Atomic Commit）记录进度并更新 `docs/TASKS.md`。
-- 双端确定性护栏分别守边界：父端 `~/.gemini/config/hooks.json` 拦截主控侧高危 `run_command` 与 `/mnt/` 操作；执行端靠 Codex 沙箱与 `~/.codex/rules/guardrails.rules` 兜底，绝不把父端 Hook 放行视作子任务隔离证明。
+- 双端确定性护栏分别守边界：父端 `~/.gemini/config/hooks.json` 拦截主控侧高危 `run_command`，并在 WSL2 下对 `/mnt/<drive>` 高 I/O 操作要求确认。执行端靠 Codex 沙箱与 `~/.codex/rules/guardrails.rules` 兜底，绝不把父端 Hook 放行视作子任务隔离证明。
 - 严禁未经确认执行破坏性操作（`git push --force`、`rm -rf`、删库/生产迁移、大版本依赖升级）。
 
-## 5. WSL2 本地环境护栏
-- 仅在 WSL2 原生 Linux 文件系统（如 `~/`）开展编码与测试，提醒并避免在 `/mnt/c` 等跨系统挂载路径下进行高 I/O 构建或模型读写。
-- 涉及显存密集型进程（如本地 vLLM）的启停，执行前先确认当前 GPU 占用，避免与宿主机任务冲突。
+## 5. 跨平台本地环境护栏（Linux / WSL2 / macOS）
+- 仅在 WSL2 下对 `/mnt/<drive>` 跨盘高 I/O 操作要求确认，并优先使用 Linux 文件系统（如 `~/`）编码与测试。WSL2 下 `dispatch-codex` 拒绝在 `/mnt` 及其子路径派单，除非显式传入 `--allow-mnt`。原生 Linux 与 macOS 自动跳过这些挂载限制。
+- macOS 额外保护 `/Users` 及 `/System`、`/Applications`、`/Library`、`/Volumes` 等系统根目录，阻止对这些路径执行递归强制删除。
+- 安装和运行仅依赖 Node 24+ 与 `codex-cli`，`bun` 可选。
+- 仅在运行本地 GPU 推理进程（如本地 vLLM）的机器上，启停这些进程前先确认当前 GPU 占用。

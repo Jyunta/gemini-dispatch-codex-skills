@@ -2,7 +2,7 @@
 
 ## 1. 背景与目标
 
-本分支 `personal/agy-codex-orchestration` 在保留 `main` 跟踪上游的同时，面向 **WSL2 + Antigravity (`agy` 主控) + ChatGPT 订阅版 Codex (`codex-cli 0.172.0`：GPT-6.2 Sol / Astra)** 落地完整的单人工程闭环，并纳入 GPT-6.2 Astra 红队审查后的全部修正项。
+本分支 `personal/agy-codex-orchestration` 在保留 `main` 跟踪上游的同时，面向 **原生 Linux / WSL2 / macOS + Antigravity (`agy` 主控) + ChatGPT 订阅版 Codex (`codex-cli 0.172.0`：GPT-6.2 Sol / Astra)** 落地完整的单人工程闭环，并纳入 GPT-6.2 Astra 红队审查后的全部修正项。运行与安装仅依赖 **Node 24+** 与 `codex-cli`（`bun` 仅在开发仓库跑 `validate:effect` 时需要）。
 
 常规流程由 Neon 主控，配合 Codex Sol 与 Astra。可用 `agy models` 复核 Antigravity 模型 ID。
 
@@ -66,18 +66,25 @@ Gemini 共享配额耗尽后，由 Claude Opus 5.5 或 Sonnet 5.5 接管协调�
   - 复用进程身份锁（PID + `ps lstart`），启动前原子登记 `status: "running"`, `pid`, `attempt`, `worktreePath`, `baseHead`；同 `task-id` 若已有存活进程直接拒绝重派；写任务 `attempt >= 3` 硬熔断（退出码 `3`，除非 `--reset`）；`impl` 连续失败 `>= 2` 次提示或阻断并要求切 `escalate`（除非 `--force-sol`）。
 - **显式 Worktree 与完整验收**：
   - 禁用 `codex exec --worktree`；传入 `--worktree <dir>` 时由 `dispatch-codex` 执行 `git worktree add` 并对 `codex exec` 传 `-C <dir>`。
-  - 执行前校验目标路径不在 `/mnt/` 下（`--allow-mnt` 可显式豁免）。
+  - 执行前在 WSL2 环境下校验目标路径不在 `/mnt/` 下（原生 Linux 与 macOS 自动跳过 `/mnt/` 误判；WSL2 下 `--allow-mnt` 可显式豁免）。
   - 执行后在**实际执行目录**收集 `git status --porcelain=v1 --untracked-files=all` 与 `git diff HEAD --stat`，输出结构化验收摘要（支持 `--json` 与 `--dry-run`）。
 
-### 2.4 双端确定性护栏（Phase 2）
+### 2.4 双端确定性护栏与生效自检门禁（Phase 2 & 跨平台）
+- **WSL 环境探测**：仅在 `process.platform === "linux"` 且存在 `WSL_DISTRO_NAME` / `WSL_INTEROP`（或 `/proc/version` 含 `microsoft`）时启用 WSL2 `/mnt/<drive>` 跨盘护栏，原生 Linux 与 macOS 不误伤 `/mnt/data` 等常规挂载点。
 - `packages/guardrails/agy-pretool-guard.ts`（`PreToolUse` Hook）：
   - 解析 stdin JSON（Effect Schema 校验），仅拦截 `toolCall.name === "run_command"`；
-  - `git push --force` / `-f`（非 `--force-with-lease`）、`git reset --hard`、`git clean -fdx`、破坏性 `rm -rf` → 返回 `force_ask` 或 `deny`；
-  - 针对 `/mnt/[a-z]/` 的高频构建/包管理/测试命令 → 返回 `ask` 并给出 WSL2 跨挂载提示；
+  - `git push --force` / `-f`（非 `--force-with-lease`）、`git reset --hard`、`git clean -fdx`、破坏性 `rm -rf`（含 Linux `/home`、`/root` 与 macOS `/Users`、`/System`、`/Applications`、`/Library`、`/Volumes`）→ 返回 `force_ask` 或 `deny`；
+  - 仅在 WSL2 下对 `/mnt/[a-zA-Z]/` 的高频构建/包管理/测试命令返回 `ask` 并给出跨挂载提示；
   - 明确注释仅保护父端 `agy` 工具调用，不宣称隔离 Codex 内部命令。
+- `packages/guardrails/agy-preinvocation-guard.ts`（`PreInvocation` 生效自检与拦截 Hook）：
+  - 每次会话首次调用（`invocationNum === 1`）执行纯本地 fs 零网络、零 Token 自检：核对 `~/.gemini/GEMINI.md`（或 `~/.gemini/config/GEMINI.md`）可读、核心 Antigravity Skill（`agy-codex-orchestrator`、`code-review`）以实体目录存在于 `~/.gemini/config/skills/` 且 `realpath` 未逃逸、`~/.local/bin/dispatch-codex` 可执行、Codex 侧 `review-sol` / `redteam-astra` Profile 与 `guardrails.rules` 未断链；
+  - 环境变量逃生阀 `AGY_ORCH_GUARD`：默认 `strict`（任一项缺失直接返回 `errorMessage` + `terminationBehavior: "terminate"`，在调模型前硬拦截）；`warn` 降级为 `systemMessage` + `user_markdown` 高亮告警放行；`off` 跳过。
 - `packages/guardrails/codex-guardrails.rules`：
   - Codex 原生 `execpolicy` 规则（经 `codex execpolicy check` 校验），对 `git push --force`、`git push -f`、`git reset --hard`、`rm -rf` 设为 `decision="forbidden"`。
-- `node packages/guardrails/render-agy-hooks.mjs`：输出 `PreToolUse` 配置，使用当前 Node 可执行文件和本仓库 `agy-pretool-guard.ts` 的绝对路径。用长期可用的 Node 24 或更新版本生成配置。
+- `node packages/guardrails/render-agy-hooks.mjs`：输出包含 `deterministic-command-guard`（`PreToolUse`）与 `orchestration-health-gate`（`PreInvocation`）的完整 Hook 配置，使用当前 Node 24+ 与本仓库脚本的绝对路径。
+- **一键跨平台激活与安装期 `doctor` 门禁**：
+  - `packages/guardrails/verify-orchestration.mjs`：安装期硬门禁，校验 Node ≥ 24、`~/.gemini/GEMINI.md`、13 个 Antigravity 实体 Skill 及其 `realpath`、极简非登录 `env -i` 下的 `dispatch-codex` 路由（含 `-p review-sol` / `-p redteam-astra`）、`codex login status`（ChatGPT 登录）、5 个 Codex Skill / 5 个 Profile / `codex execpolicy check`、以及实际执行 `hooks.json` 中的 `PreToolUse` 与 `PreInvocation` 命令；任一项不通过非零退出。
+  - `scripts/activate-orchestration.mjs`：统一 Linux / WSL2 / macOS 激活入口，支持 `--dry-run` / `--node-bin` / `--skip-codex-login-check`，幂等安装双端配置（备份并保留 `~/.codex/AGENTS.md` 用户自定义段与 `~/.gemini/config/hooks.json` 既有其他 Hook），最后强制调用 `verify-orchestration.mjs`。
 
 ### 2.5 Skill 适配与全局配置激活
 - `skills/code-review/` 对常规和高危 L2 均默认派 Astra（`--deep`，`high`）加全新隔离的 Neon（`gemini-4-neon-high`），不消耗 Claude 额度。仅用户显式要求额外 Anthropic 全审时用 Sonnet 5.5（`claude-sonnet-5-5-high`）作单轮静态第二席。Claude 主控时只派 Astra，由主控复核。

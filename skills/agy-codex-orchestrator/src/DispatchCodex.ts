@@ -20,6 +20,7 @@ import { rmdir } from "node:fs/promises"
 import { homedir } from "node:os"
 
 import { checkedText, platformErrorExitCode } from "../../../packages/effect-cli/CheckedProcess.ts"
+import { isWslEnvironment } from "../../../packages/guardrails/wsl.ts"
 
 export const roles = ["redteam", "impl", "escalate", "review", "scout"] as const
 export const efforts = ["low", "medium", "high", "xhigh"] as const
@@ -85,6 +86,7 @@ interface LocationOptions {
 interface DispatchOptions extends LocationOptions {
   readonly codexBin?: string | undefined
   readonly allowMnt?: boolean | undefined
+  readonly isWsl?: boolean
   readonly dryRun?: boolean | undefined
   readonly json?: boolean | undefined
 }
@@ -124,8 +126,8 @@ const taskBoundary = [
 const sha256 = (input: string) => createHash("sha256").update(input).digest("hex")
 const mntPath = (path: string) => path === "/mnt" || path.startsWith("/mnt/")
 
-const guardMount = Effect.fn("DispatchCodex.guardMount")(function*(path: string, allowMnt?: boolean) {
-  if (!allowMnt && mntPath(path)) {
+const guardMount = Effect.fn("DispatchCodex.guardMount")(function*(path: string, options: DispatchOptions) {
+  if (mntPath(path) && !options.allowMnt && (options.isWsl ?? isWslEnvironment())) {
     return yield* dispatchError(`Refusing to dispatch from ${path} under /mnt. Use a Linux filesystem path or pass --allow-mnt.`)
   }
 })
@@ -144,10 +146,10 @@ const canonicalPath = Effect.fn("DispatchCodex.canonicalPath")(function*(
   ))
 })
 
-const absoluteDirectory = Effect.fn("DispatchCodex.absoluteDirectory")(function*(target: string, allowMnt?: boolean) {
-  yield* guardMount(target, allowMnt)
+const absoluteDirectory = Effect.fn("DispatchCodex.absoluteDirectory")(function*(target: string, options: DispatchOptions) {
+  yield* guardMount(target, options)
   const resolved = yield* canonicalPath(target)
-  yield* guardMount(resolved, allowMnt)
+  yield* guardMount(resolved, options)
   return resolved
 })
 
@@ -511,9 +513,9 @@ const dispatchInWorktree = Effect.fn("DispatchCodex.dispatchInWorktree")(functio
 
 export const runDispatch = Effect.fn("DispatchCodex.run")(function*(options: RunOptions, stdin = readStdin) {
   const path = yield* Path.Path
-  const cwd = yield* absoluteDirectory(path.resolve(options.cwd ?? process.cwd()), options.allowMnt)
+  const cwd = yield* absoluteDirectory(path.resolve(options.cwd ?? process.cwd()), options)
   const worktree = options.worktree === undefined ? cwd
-    : yield* absoluteDirectory(path.resolve(cwd, options.worktree), options.allowMnt)
+    : yield* absoluteDirectory(path.resolve(cwd, options.worktree), options)
   if (options.prompt !== undefined && options.promptFile !== undefined) {
     return yield* dispatchError("Choose either --prompt or --prompt-file.")
   }
